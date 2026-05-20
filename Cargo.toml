@@ -1,23 +1,26 @@
 [package]
-publish = false  # internal crate, never published to crates.io
 name = "sicompass-sdk"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
 description = "Sicompass provider SDK — FFON types, Provider trait, tag parsing, platform utils"
+repository = "https://github.com/friendlyflow/sicompass-plugin-sdk"
+readme = "README.md"
+keywords = ["sicompass", "plugin", "sdk", "provider"]
+categories = ["api-bindings"]
 
 [dependencies]
-serde = { workspace = true }
-serde_json = { workspace = true }
-unicode-normalization = { workspace = true }
-scraper = { workspace = true }
-url = { workspace = true }
-libloading = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-normalization = "0.1"
+scraper = "0.27"
+url = "2"
+libloading = "0.9"
 trash = "5"
-fluent = { workspace = true }
-fluent-langneg = { workspace = true }
-unic-langid = { workspace = true }
-intl-memoizer = { workspace = true }
+fluent = "0.16"
+fluent-langneg = "0.13"
+unic-langid = "0.9"
+intl-memoizer = "0.5"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 xdg = "3"
@@ -26,5 +29,5 @@ xdg = "3"
 winreg = "0.56"
 
 [dev-dependencies]
-mockall = { workspace = true }
-tempfile = { workspace = true }
+mockall = "0.14"
+tempfile = "3"

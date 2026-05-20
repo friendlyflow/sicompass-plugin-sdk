@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish-crate:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
+
+  release-c-header:
+    name: Generate C header and attach to release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cbindgen
+        run: cargo install cbindgen --locked
+      - name: Generate sicompass_sdk.h
+        run: cbindgen --config cbindgen.toml --crate sicompass-sdk --output sicompass_sdk.h
+      - name: Upload header to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: sicompass_sdk.h
+          fail_on_unmatched_files: true
