@@ -1,0 +1,33 @@
+language = "C"
+header = """/* sicompass-plugin-sdk — C plugin ABI
+ *
+ * Generated from the sicompass-sdk Rust crate via cbindgen.
+ * DO NOT EDIT by hand: regenerate with `cbindgen --config cbindgen.toml --crate sicompass-sdk --output sicompass_sdk.h`
+ */"""
+include_guard = "SICOMPASS_SDK_H"
+pragma_once = true
+cpp_compat = true
+sys_includes = ["stdint.h", "stddef.h"]
+no_includes = true
+documentation = true
+
+[parse]
+parse_deps = false
+
+[export]
+prefix = ""
+# Only export the items that form the C plugin ABI. Rust-only loader types
+# (NativePlugin, ScriptProvider) are intentionally excluded.
+include = [
+    "FfonElementC",
+    "ProviderListItemC",
+    "SearchResultItemC",
+    "ProviderOpsC",
+]
+
+[enum]
+prefix_with_name = true
+rename_variants = "ScreamingSnakeCase"
+
+[fn]
+prefix = ""
