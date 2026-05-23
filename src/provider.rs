@@ -46,6 +46,12 @@ pub trait Provider: Send + 'static {
         self.name().to_owned()
     }
 
+    /// Optional version string for this provider, displayed in the settings
+    /// tree under the provider's section. Built-ins typically return
+    /// `Some(env!("CARGO_PKG_VERSION"))`; third-party plugins normally leave
+    /// the default (their version is read from `plugin.json` instead).
+    fn version(&self) -> Option<&str> { None }
+
     // ---- Required: data source ---------------------------------------------
 
     /// Fetch children at the current path.
@@ -165,6 +171,11 @@ pub trait Provider: Send + 'static {
 
     /// Remove a named section from this provider.
     fn remove_settings_section(&mut self, _name: &str) {}
+
+    /// Attach a version string to a named section. The settings provider
+    /// stores this and renders it as a passive child line under the section.
+    /// Default: no-op.
+    fn set_section_version(&mut self, _section: &str, _version: &str) {}
 
     /// Register a text entry in a settings section.
     /// Mirrors `settingsAddSectionText` in C. Default: no-op.
