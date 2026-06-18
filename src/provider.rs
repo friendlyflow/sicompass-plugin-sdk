@@ -148,6 +148,13 @@ pub trait Provider: Send + 'static {
     /// needs a redraw as a result.
     fn tick(&mut self) -> bool { false }
 
+    /// Whether the provider currently has work in flight that the user would
+    /// not want to lose by closing the tab — e.g. a terminal running a
+    /// foreground command or a full-screen interactive program. The app
+    /// queries this on Ctrl+W and asks the user to confirm before tearing the
+    /// provider (and its child process) down. Default: never busy.
+    fn is_busy(&self) -> bool { false }
+
     // ---- Optional: settings section management -----------------------------
 
     /// Register a named section in this provider. Used by programs to give
