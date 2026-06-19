@@ -21,6 +21,9 @@ once a wire-protocol surface is stabilized.
 ## What's in here
 
 - `Provider` trait, command dispatch, navigation, FFON tree types
+  - lifecycle/state hooks: `is_busy` (so the host can warn before closing a tab
+    mid-operation) and `version` / `set_section_version` (report and stamp a
+    provider's section version)
 - Timeline / undo-redo entries
 - Tag parsing, dashboard primitives, localization (Fluent)
 - Platform helpers (trash, XDG / registry config locations)
