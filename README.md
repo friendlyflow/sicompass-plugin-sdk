@@ -10,13 +10,15 @@ it as a dependency, the same way third-party plugin authors do.
 | Language | Install                                       | Header / module name                          |
 | -------- | --------------------------------------------- | --------------------------------------------- |
 | Rust     | `cargo add sicompass-sdk`                     | `use sicompass_sdk::*;`                       |
-| C        | Download `sicompass_sdk.h` from a release tag | `#include <sicompass_sdk.h>`                  |
+| C        | Bundled in the crate, or download from a release tag | `#include <sicompass_sdk.h>`           |
 | TS       | (not yet published)                           | `import { ... } from "@sicompass/sdk"`        |
 | Python   | (not yet published)                           | `from sicompass_sdk import *`                 |
 
-The Rust crate is the source of truth. The C header is generated from the Rust
-sources via `cbindgen` on each release. TS and Python packages will be added
-once a wire-protocol surface is stabilized.
+The Rust crate is the source of truth. The C header `sicompass_sdk.h` is
+generated from the Rust sources via `cbindgen`, committed to this repo, and
+ships inside the published crate (it is also attached to each GitHub release for
+consumers who do not use Cargo). TS and Python packages will be added once a
+wire-protocol surface is stabilized.
 
 ## What's in here
 
@@ -48,8 +50,10 @@ impl Provider for MyProvider { /* ... */ }
 
 ### C
 
-Download `sicompass_sdk.h` from the [Releases page](https://github.com/friendlyflow/sicompass-plugin-sdk/releases),
-include it, and export `sicompass_plugin_init`:
+Get `sicompass_sdk.h` either from the published crate (it lives at the crate
+root, e.g. `~/.cargo/registry/src/.../sicompass-sdk-X.Y.Z/sicompass_sdk.h`) or
+from the [Releases page](https://github.com/friendlyflow/sicompass-plugin-sdk/releases).
+Include it and export `sicompass_plugin_init`:
 
 ```c
 #include <sicompass_sdk.h>
@@ -60,14 +64,29 @@ const ProviderOpsC *sicompass_plugin_init(void) {
 }
 ```
 
-Compile as a shared library and place it where Sicompass scans for plugins.
+Compile as a shared library and place it where Sicompass scans for plugins:
+
+```sh
+cc -shared -fPIC -I. my_plugin.c -o my_plugin.so
+```
+
+(`.so` on Linux, `.dylib` on macOS, `.dll` on Windows.)
 
 ## Releasing
 
+Before tagging, regenerate the header and commit it if it changed:
+
+```sh
+cbindgen --config cbindgen.toml --crate sicompass-sdk --output sicompass_sdk.h
+```
+
 Tags of the form `vX.Y.Z` trigger the release workflow:
 
-- Publishes the `sicompass-sdk` crate to crates.io
-- Generates `sicompass_sdk.h` via `cbindgen` and uploads it as a GitHub release asset
+- Verifies the committed `sicompass_sdk.h` is up to date (the release fails if it
+  is stale), then publishes the `sicompass-sdk` crate to crates.io with the header
+  bundled in
+- Also generates `sicompass_sdk.h` via `cbindgen` and uploads it as a GitHub
+  release asset
 
 ## License
 

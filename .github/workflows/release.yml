@@ -15,6 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install cbindgen
+        run: cargo install cbindgen --locked
+      - name: Verify committed header is up to date
+        run: |
+          cbindgen --config cbindgen.toml --crate sicompass-sdk --output sicompass_sdk.h
+          git diff --exit-code sicompass_sdk.h \
+            || (echo "::error::sicompass_sdk.h is stale. Regenerate with cbindgen and commit it." && exit 1)
       - name: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
