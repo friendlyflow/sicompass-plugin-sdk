@@ -76,6 +76,11 @@ pub trait Provider: Send + 'static {
     fn current_path(&self) -> &str { "/" }
     fn set_current_path(&mut self, _path: &str) {}
 
+    /// OS process id of a backing child process (e.g. a terminal's shell), if
+    /// any. Default: none. Used by the tab switcher to identify a tab by its
+    /// shell PID.
+    fn process_id(&self) -> Option<u32> { None }
+
     // ---- Optional: file operations -----------------------------------------
 
     fn create_directory(&mut self, _name: &str) -> bool { false }
