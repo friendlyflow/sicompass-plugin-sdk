@@ -2,3 +2,5 @@
 Cargo.lock
 sicompass_sdk.h
 graphify-out/
+CLAUDE.md
+.claude/
