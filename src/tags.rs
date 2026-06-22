@@ -88,6 +88,8 @@ const FILE_TAG: &str = "<file>";
 
 const INPUT_OPEN: &str = "<input>";
 const INPUT_CLOSE: &str = "</input>";
+const PASSWORD_OPEN: &str = "<password>";
+const PASSWORD_CLOSE: &str = "</password>";
 const RADIO_OPEN: &str = "<radio>";
 const RADIO_CLOSE: &str = "</radio>";
 const CHECKED_OPEN: &str = "<checked>";
@@ -124,6 +126,38 @@ pub fn extract_input(text: &str) -> Option<String> {
 /// Wraps `content` in `<input>...</input>`.
 pub fn format_input(content: &str) -> String {
     format!("{INPUT_OPEN}{content}{INPUT_CLOSE}")
+}
+
+// ---------------------------------------------------------------------------
+// <password>...</password>
+// ---------------------------------------------------------------------------
+//
+// A `<password>` field behaves exactly like `<input>` (editable in place,
+// value round-trips through `strip_display`), but consumers are expected to
+// render its content masked. Use [`mask_password`] for the one-asterisk-per-
+// character masking rule. Any provider opts in by emitting `<password>...`
+// instead of `<input>...`.
+
+/// Returns true if `text` contains `<password>...</password>`.
+pub fn has_password(text: &str) -> bool {
+    find_unescaped(text, PASSWORD_OPEN).is_some()
+        && find_unescaped(text, PASSWORD_CLOSE).is_some()
+}
+
+/// Extracts content between `<password>` and `</password>`.
+pub fn extract_password(text: &str) -> Option<String> {
+    extract_between(text, PASSWORD_OPEN, PASSWORD_OPEN.len(), PASSWORD_CLOSE).map(|s| s.to_owned())
+}
+
+/// Wraps `content` in `<password>...</password>`.
+pub fn format_password(content: &str) -> String {
+    format!("{PASSWORD_OPEN}{content}{PASSWORD_CLOSE}")
+}
+
+/// Masks `content` as one `*` per character — the canonical rendering for a
+/// `<password>` value. Length is intentionally preserved (not hidden).
+pub fn mask_password(content: &str) -> String {
+    "*".repeat(content.chars().count())
 }
 
 // ---------------------------------------------------------------------------
@@ -396,6 +430,7 @@ pub fn strip_display(text: &str) -> String {
     // 5. Find the first recognized tag pair and strip it
     let candidates: &[(&str, usize, &str)] = &[
         (INPUT_OPEN,             INPUT_OPEN.len(),             INPUT_CLOSE),
+        (PASSWORD_OPEN,          PASSWORD_OPEN.len(),          PASSWORD_CLOSE),
         (RADIO_OPEN,             RADIO_OPEN.len(),             RADIO_CLOSE),
         (CHECKED_OPEN,           CHECKED_OPEN.len(),           CHECKED_CLOSE),
         (CHECKBOX_CHECKED_OPEN,  CHECKBOX_CHECKED_OPEN.len(),  CHECKBOX_CLOSE),
@@ -525,6 +560,53 @@ mod tests {
     #[test]
     fn test_format_input_empty() {
         assert_eq!(format_input(""), "<input></input>");
+    }
+
+    // --- password ---
+
+    #[test]
+    fn test_has_password_true() {
+        assert!(has_password("<password>secret</password>"));
+    }
+
+    #[test]
+    fn test_has_password_false_no_tag() {
+        assert!(!has_password("plain"));
+        assert!(!has_password("<input>secret</input>"));
+    }
+
+    #[test]
+    fn test_extract_password_basic() {
+        assert_eq!(extract_password("<password>secret</password>").as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn test_extract_password_with_prefix_suffix() {
+        assert_eq!(
+            extract_password("API key: <password>abc123</password> (hint)").as_deref(),
+            Some("abc123")
+        );
+    }
+
+    #[test]
+    fn test_format_password() {
+        assert_eq!(format_password("secret"), "<password>secret</password>");
+    }
+
+    #[test]
+    fn test_strip_display_password_returns_value() {
+        // strip_display is NOT where masking happens — it returns the real value
+        // so the editable buffer round-trips.
+        assert_eq!(strip_display("<password>secret</password>"), "secret");
+        assert_eq!(strip_display("API key: <password>abc</password>"), "API key: abc");
+    }
+
+    #[test]
+    fn test_mask_password_length() {
+        assert_eq!(mask_password("secret"), "******");
+        assert_eq!(mask_password(""), "");
+        // one asterisk per character, counting Unicode scalar values
+        assert_eq!(mask_password("café"), "****");
     }
 
     // --- radio ---

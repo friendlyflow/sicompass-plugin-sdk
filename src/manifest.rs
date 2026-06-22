@@ -14,6 +14,9 @@ use std::sync::{Mutex, OnceLock};
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingKind {
     Text,
+    /// Like `Text`, but the value is rendered masked (one asterisk per
+    /// character) in the settings panel and while being edited.
+    Password,
     Checkbox,
     Radio,
 }
@@ -36,6 +39,19 @@ impl SettingDecl {
     pub fn text(section: &str, label: &str, key: &str, default: &str) -> Self {
         SettingDecl {
             kind: SettingKind::Text,
+            section: section.to_owned(),
+            label: label.to_owned(),
+            key: key.to_owned(),
+            default: default.to_owned(),
+            default_checked: false,
+            options: vec![],
+        }
+    }
+
+    /// Like [`SettingDecl::text`], but the value is masked when displayed.
+    pub fn password(section: &str, label: &str, key: &str, default: &str) -> Self {
+        SettingDecl {
+            kind: SettingKind::Password,
             section: section.to_owned(),
             label: label.to_owned(),
             key: key.to_owned(),
@@ -150,6 +166,14 @@ mod tests {
         let d = SettingDecl::text("section", "label", "key", "default");
         assert_eq!(d.kind, SettingKind::Text);
         assert_eq!(d.section, "section");
+        assert_eq!(d.default, "default");
+        assert!(d.options.is_empty());
+    }
+
+    #[test]
+    fn setting_decl_password_constructor() {
+        let d = SettingDecl::password("section", "label", "key", "default");
+        assert_eq!(d.kind, SettingKind::Password);
         assert_eq!(d.default, "default");
         assert!(d.options.is_empty());
     }

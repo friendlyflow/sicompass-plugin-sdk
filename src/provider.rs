@@ -194,6 +194,16 @@ pub trait Provider: Send + 'static {
     fn add_text_setting(&mut self, _section: &str, _label: &str,
                         _config_key: &str, _default: &str) {}
 
+    /// Register a password text entry in a settings section. Behaves like
+    /// [`Provider::add_text_setting`] but the value is rendered masked (one
+    /// asterisk per character) in the settings panel and while being edited.
+    /// Default: delegate to `add_text_setting` (unmasked) so providers that
+    /// don't distinguish still get a working field.
+    fn add_password_setting(&mut self, section: &str, label: &str,
+                            config_key: &str, default: &str) {
+        self.add_text_setting(section, label, config_key, default);
+    }
+
     /// Register a checkbox entry in a settings section.
     /// Mirrors `settingsAddSectionCheckbox` in C. Default: no-op.
     fn add_checkbox_setting(&mut self, _section: &str, _label: &str,
