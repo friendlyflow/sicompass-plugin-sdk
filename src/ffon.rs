@@ -666,9 +666,21 @@ pub enum FormNodeKind {
 /// Describes how to find and interact with a form control via CDP.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FormNode {
-    /// A CSS selector that uniquely identifies this element in the live DOM.
+    /// A CSS selector for the control, resolved by the caller against
+    /// `document.forms[form_index - 1]` (the form in document order) when
+    /// `form_index > 0`, or against `document` when `form_index == 0` (a control
+    /// that lives outside any `<form>`). Kept form-relative because CSS cannot
+    /// address "the Nth form in the document" directly.
     pub css_selector: String,
     pub kind: FormNodeKind,
+    /// 1-based index of the owning `<form>` in document order, or 0 if the
+    /// control is not inside any form.
+    pub form_index: usize,
+    /// 0-based position among elements matching `css_selector` within the same
+    /// scope, so duplicate controls (e.g. two `[name="q"]` desktop/mobile search
+    /// boxes) resolve to distinct elements via `querySelectorAll(sel)[match_index]`
+    /// instead of always the first.
+    pub match_index: usize,
 }
 
 /// Maps FFON path segments (e.g. `"form_1/email"`) to the corresponding
@@ -722,6 +734,8 @@ struct HtmlParseCtx<'a> {
     form_count: usize,        // total forms encountered in the document (never reset)
     current_form_idx: usize,  // 1-based index of the form being parsed (0 = not in a form)
     form_input_count: usize,  // inputs seen in the current form (for fallback labels)
+    form_label_counts: std::collections::HashMap<String, usize>,    // label → times seen (per scope), to disambiguate duplicates
+    form_selector_counts: std::collections::HashMap<String, usize>, // selector → times seen (per scope), for match_index
     form_map: Vec<(String, FormNode)>, // accumulated path → node entries
 }
 
@@ -735,8 +749,29 @@ impl<'a> HtmlParseCtx<'a> {
             form_count: 0,
             current_form_idx: 0,
             form_input_count: 0,
+            form_label_counts: std::collections::HashMap::new(),
+            form_selector_counts: std::collections::HashMap::new(),
             form_map: Vec::new(),
         }
+    }
+
+    /// Disambiguate a control's label within the current scope: the first
+    /// occurrence keeps the base label, later duplicates get a `(2)`, `(3)`, …
+    /// suffix so their form-map keys (and the visible labels) stay unique.
+    fn disambiguate_label(&mut self, base: String) -> String {
+        let count = self.form_label_counts.entry(base.clone()).or_insert(0);
+        let label = if *count == 0 { base.clone() } else { format!("{base} ({})", *count + 1) };
+        *count += 1;
+        label
+    }
+
+    /// Next 0-based position among controls sharing `selector` in this scope, so
+    /// duplicates resolve via `querySelectorAll(sel)[match_index]`.
+    fn next_match_index(&mut self, selector: &str) -> usize {
+        let count = self.form_selector_counts.entry(selector.to_owned()).or_insert(0);
+        let idx = *count;
+        *count += 1;
+        idx
     }
 
     fn add_to_current(&mut self, mut elem: FfonElement) {
@@ -932,34 +967,44 @@ impl<'a> HtmlParseCtx<'a> {
                         // Not user-visible; skip.
                     }
                     "checkbox" => {
-                        let label = html_input_label(&ph, &al, &name, &id_attr,
-                                                     &mut self.form_input_count);
+                        let base = html_input_label(&ph, &al, &name, &id_attr,
+                                                    &mut self.form_input_count);
+                        let label = self.disambiguate_label(base);
                         let tag = if is_checked { "<checkbox checked>" } else { "<checkbox>" };
                         self.add_to_current(FfonElement::new_str(format!("{tag}{label}")));
                         if form_n > 0 {
+                            let css = html_input_selector(&name, &id_attr);
+                            let match_index = self.next_match_index(&css);
                             self.form_map.push((
                                 format!("form_{form_n}/{label}"),
                                 FormNode {
-                                    css_selector: html_input_selector(form_n, &name, &id_attr),
+                                    css_selector: css,
                                     kind: FormNodeKind::Checkbox,
+                                    form_index: form_n,
+                                    match_index,
                                 },
                             ));
                         }
                     }
                     "radio" => {
-                        let label = html_input_label(&ph, &al, &name, &id_attr,
-                                                     &mut self.form_input_count);
+                        let base = html_input_label(&ph, &al, &name, &id_attr,
+                                                    &mut self.form_input_count);
+                        let label = self.disambiguate_label(base);
                         let indicator = if is_checked { "(x) " } else { "( ) " };
                         self.add_to_current(FfonElement::new_str(format!("{indicator}{label}")));
                         if form_n > 0 && !name.is_empty() {
+                            let css = html_input_selector(&name, &id_attr);
+                            let match_index = self.next_match_index(&css);
                             self.form_map.push((
                                 format!("form_{form_n}/{name}/{label}"),
                                 FormNode {
-                                    css_selector: html_input_selector(form_n, &name, &id_attr),
+                                    css_selector: css,
                                     kind: FormNodeKind::RadioOption {
                                         group: name.clone(),
                                         value: value.clone(),
                                     },
+                                    form_index: form_n,
+                                    match_index,
                                 },
                             ));
                         }
@@ -970,17 +1015,27 @@ impl<'a> HtmlParseCtx<'a> {
                     }
                     _ => {
                         // text, email, password, url, search, tel, number, date, …
-                        let label = html_input_label(&ph, &al, &name, &id_attr,
-                                                     &mut self.form_input_count);
+                        let base = html_input_label(&ph, &al, &name, &id_attr,
+                                                    &mut self.form_input_count);
+                        let label = self.disambiguate_label(base);
                         self.add_to_current(FfonElement::new_str(
                             format!("{label}: <input>{value}</input>")
                         ));
-                        if form_n > 0 {
+                        // Register the field for fill/submit. Inside a form
+                        // (form_n > 0) always; outside any form only when it has
+                        // an id or name to target globally, so JS-driven search
+                        // boxes that lack a <form> are still fillable.
+                        // extract_form_key accepts the "form_0/..." namespace.
+                        if form_n > 0 || !id_attr.is_empty() || !name.is_empty() {
+                            let css = html_input_selector(&name, &id_attr);
+                            let match_index = self.next_match_index(&css);
                             self.form_map.push((
                                 format!("form_{form_n}/{label}"),
                                 FormNode {
-                                    css_selector: html_input_selector(form_n, &name, &id_attr),
+                                    css_selector: css,
                                     kind: FormNodeKind::TextInput,
+                                    form_index: form_n,
+                                    match_index,
                                 },
                             ));
                         }
@@ -998,15 +1053,20 @@ impl<'a> HtmlParseCtx<'a> {
                 let al      = node.value().attr("aria-label").unwrap_or("").to_owned();
                 let content = node.text().collect::<String>().trim().to_owned();
                 let form_n  = self.current_form_idx;
-                let label   = html_input_label(&ph, &al, &name, &id_attr,
+                let base    = html_input_label(&ph, &al, &name, &id_attr,
                                                &mut self.form_input_count);
+                let label   = self.disambiguate_label(base);
                 self.add_to_current(FfonElement::new_str(format!("{label}: <input>{content}</input>")));
                 if form_n > 0 {
+                    let css = html_input_selector(&name, &id_attr);
+                    let match_index = self.next_match_index(&css);
                     self.form_map.push((
                         format!("form_{form_n}/{label}"),
                         FormNode {
-                            css_selector: html_input_selector(form_n, &name, &id_attr),
+                            css_selector: css,
                             kind: FormNodeKind::Textarea,
+                            form_index: form_n,
+                            match_index,
                         },
                     ));
                 }
@@ -1020,8 +1080,9 @@ impl<'a> HtmlParseCtx<'a> {
                 let id_attr = node.value().attr("id").unwrap_or("").to_owned();
                 let al      = node.value().attr("aria-label").unwrap_or("").to_owned();
                 let form_n  = self.current_form_idx;
-                let label   = html_input_label("", &al, &name, &id_attr,
+                let base    = html_input_label("", &al, &name, &id_attr,
                                                &mut self.form_input_count);
+                let label   = self.disambiguate_label(base);
 
                 let opt_sel = scraper::Selector::parse("option").unwrap();
                 let mut radio_obj = FfonElement::new_obj(format!("<radio>{label}"));
@@ -1038,11 +1099,15 @@ impl<'a> HtmlParseCtx<'a> {
                     };
                     radio_obj.as_obj_mut().unwrap().push(entry);
                     if form_n > 0 {
+                        let css = html_select_option_selector(&name, &id_attr, &val);
+                        let match_index = self.next_match_index(&css);
                         self.form_map.push((
                             format!("form_{form_n}/{label}/{display}"),
                             FormNode {
-                                css_selector: html_select_option_selector(form_n, &name, &id_attr, &val),
+                                css_selector: css,
                                 kind: FormNodeKind::Select,
+                                form_index: form_n,
+                                match_index,
                             },
                         ));
                     }
@@ -1171,12 +1236,18 @@ impl<'a> HtmlParseCtx<'a> {
         let saved_stack = std::mem::take(&mut self.stack);
         let saved_input_count = std::mem::replace(&mut self.form_input_count, 0);
         let saved_form_idx    = std::mem::replace(&mut self.current_form_idx, form_idx);
+        // Label/selector disambiguation is per-form: start fresh, restore after so
+        // a form's counts don't leak into document-level (form_0) controls.
+        let saved_label_counts    = std::mem::take(&mut self.form_label_counts);
+        let saved_selector_counts = std::mem::take(&mut self.form_selector_counts);
         f(self);
         while let Some((_, entry)) = self.stack.pop() { self.root.push(entry); }
         let form_children = std::mem::replace(&mut self.root, saved_root);
         self.stack            = saved_stack;
         self.form_input_count = saved_input_count;
         self.current_form_idx = saved_form_idx;
+        self.form_label_counts    = saved_label_counts;
+        self.form_selector_counts = saved_selector_counts;
         form_children
     }
 
@@ -1206,13 +1277,18 @@ impl<'a> HtmlParseCtx<'a> {
 
     fn emit_submit_button(&mut self, form_n: usize, name: &str, id_attr: &str, display: &str) {
         let fn_name = format!("submit:form_{form_n}");
+        let display = self.disambiguate_label(display.to_owned());
         self.add_to_current(FfonElement::new_str(format!("<button>{fn_name}</button>{display}")));
         if form_n > 0 {
+            let css = html_submit_selector(name, id_attr);
+            let match_index = self.next_match_index(&css);
             self.form_map.push((
                 format!("form_{form_n}/{display}"),
                 FormNode {
-                    css_selector: html_submit_selector(form_n, name, id_attr),
+                    css_selector: css,
                     kind: FormNodeKind::Submit,
+                    form_index: form_n,
+                    match_index,
                 },
             ));
         }
@@ -1234,28 +1310,30 @@ fn html_input_label(ph: &str, al: &str, name: &str, id: &str, counter: &mut usiz
     format!("input_{}", *counter)
 }
 
-/// CSS selector for a form input (text/checkbox/radio/textarea).
-fn html_input_selector(form_n: usize, name: &str, id: &str) -> String {
+/// Form-relative CSS selector for a form input (text/checkbox/radio/textarea).
+/// Resolved by the caller against the owning form (or `document` for a control
+/// outside any form); an id is globally unique so it is used as-is.
+fn html_input_selector(name: &str, id: &str) -> String {
     if !id.is_empty()   { return format!("#{id}"); }
-    if !name.is_empty() { return format!("form:nth-of-type({form_n}) [name=\"{name}\"]"); }
-    format!("form:nth-of-type({form_n}) input")
+    if !name.is_empty() { return format!("[name=\"{name}\"]"); }
+    "input".to_owned()
 }
 
-/// CSS selector for a submit button.
-pub fn html_submit_selector(form_n: usize, name: &str, id: &str) -> String {
+/// Form-relative CSS selector for a submit button.
+pub fn html_submit_selector(name: &str, id: &str) -> String {
     if !id.is_empty()   { return format!("#{id}"); }
-    if !name.is_empty() { return format!("form:nth-of-type({form_n}) [name=\"{name}\"]"); }
-    format!("form:nth-of-type({form_n}) [type=\"submit\"]")
+    if !name.is_empty() { return format!("[name=\"{name}\"]"); }
+    "[type=\"submit\"]".to_owned()
 }
 
-/// CSS selector for a specific `<option>` within a `<select>`.
-fn html_select_option_selector(form_n: usize, name: &str, id: &str, val: &str) -> String {
+/// Form-relative CSS selector for a specific `<option>` within a `<select>`.
+fn html_select_option_selector(name: &str, id: &str, val: &str) -> String {
     let sel_base = if !id.is_empty() {
         format!("#{id}")
     } else if !name.is_empty() {
-        format!("form:nth-of-type({form_n}) select[name=\"{name}\"]")
+        format!("select[name=\"{name}\"]")
     } else {
-        format!("form:nth-of-type({form_n}) select")
+        "select".to_owned()
     };
     if val.is_empty() {
         format!("{sel_base} option")
@@ -2743,6 +2821,64 @@ mod tests {
         let (_, map) = html_to_ffon_with_forms(html, "");
         let node = &map["form_1/email"];
         assert!(node.css_selector.contains("name=\"email\""), "got: {}", node.css_selector);
+        // Selector is form-relative (resolved against document.forms[i-1]),
+        // not the old per-parent `form:nth-of-type(N)` form.
+        assert!(!node.css_selector.contains("nth-of-type"), "got: {}", node.css_selector);
+        assert_eq!(node.form_index, 1);
+    }
+
+    #[test]
+    fn form_fields_carry_global_form_index() {
+        // Two forms in different containers: indices follow document order, not
+        // per-parent position (the old nth-of-type bug).
+        let html = r#"<header><form><input name="q" placeholder="Find"></form></header>
+                      <footer><form><input name="email" placeholder="Mail"></form></footer>"#;
+        let (_e, map) = html_to_ffon_with_forms(html, "");
+        assert_eq!(map["form_1/Find"].form_index, 1);
+        assert_eq!(map["form_2/Mail"].form_index, 2);
+        assert_eq!(map["form_2/Mail"].css_selector, "[name=\"email\"]");
+    }
+
+    #[test]
+    fn standalone_input_registered_with_form_index_zero() {
+        // A search box outside any <form> is still fillable (form_index 0,
+        // resolved against document) so JS-driven search works.
+        let (_e, map) = html_to_ffon_with_forms(
+            r#"<input type="search" name="q" placeholder="Search">"#, "");
+        let node = map.get("form_0/Search").expect("standalone input registered");
+        assert_eq!(node.form_index, 0);
+        assert_eq!(node.css_selector, "[name=\"q\"]");
+    }
+
+    #[test]
+    fn standalone_input_without_id_or_name_is_skipped() {
+        // Nothing to target globally → don't register a dead entry.
+        let (_e, map) = html_to_ffon_with_forms(
+            r#"<input type="search" placeholder="Search">"#, "");
+        assert!(map.is_empty(), "untargetable standalone input must not register: {map:?}");
+    }
+
+    #[test]
+    fn duplicate_labels_in_one_form_are_disambiguated_and_indexed() {
+        // Two inputs with the same name share a base label ("q") and selector.
+        // Keys must not collide, and each must resolve to a distinct element.
+        let html = r#"<form><input type="text" name="q"><input type="text" name="q"></form>"#;
+        let (_e, map) = html_to_ffon_with_forms(html, "");
+        let first = map.get("form_1/q").expect("first field");
+        let second = map.get("form_1/q (2)").expect("second field disambiguated");
+        assert_eq!(first.css_selector, second.css_selector, "same selector");
+        assert_eq!(first.match_index, 0);
+        assert_eq!(second.match_index, 1, "second resolves via querySelectorAll[1]");
+    }
+
+    #[test]
+    fn duplicate_label_counts_reset_between_forms() {
+        // The "(2)" suffix is per-form, not global.
+        let html = r#"<form><input name="q"></form><form><input name="q"></form>"#;
+        let (_e, map) = html_to_ffon_with_forms(html, "");
+        assert!(map.contains_key("form_1/q"), "{map:?}");
+        assert!(map.contains_key("form_2/q"), "second form's field is not suffixed: {map:?}");
+        assert_eq!(map["form_2/q"].match_index, 0, "match_index resets per form");
     }
 
     #[test]
