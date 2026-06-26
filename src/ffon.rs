@@ -634,7 +634,9 @@ const HTML_SKIP_TAGS: &[&str] = &[
 const HTML_CONTAINER_TAGS: &[&str] = &[
     "div", "section", "article", "main", "header", "aside", "figure",
     "blockquote", "details", "summary",
-    // Structural landmark elements — treat as transparent so navigation links are visible
+    // Landmark elements (main, aside above; nav, footer below) are wrapped in a
+    // named Obj by the landmark arm in `process_node`; they stay listed here so
+    // the generic-tag fallback still treats them as block-level content.
     "nav", "footer",
     // Form structure: these are transparent containers so their children are processed normally
     "label", "fieldset",
@@ -693,6 +695,20 @@ fn html_heading_level(tag: &str) -> Option<u8> {
     match tag {
         "h1" => Some(1), "h2" => Some(2), "h3" => Some(3),
         "h4" => Some(4), "h5" => Some(5), "h6" => Some(6),
+        _ => None,
+    }
+}
+
+/// Map a structural landmark element to a default container name. The signal is
+/// the HTML element itself (not an ARIA role), so the name is as trustworthy as
+/// the page's own markup. Returns `None` for non-landmark tags, which stay
+/// transparent. A later navigability pass may rename these from their content.
+fn html_landmark_name(tag: &str) -> Option<&'static str> {
+    match tag {
+        "nav" => Some("navigation"),
+        "main" => Some("main content"),
+        "footer" => Some("footer"),
+        "aside" => Some("complementary"),
         _ => None,
     }
 }
@@ -1053,6 +1069,18 @@ impl<'a> HtmlParseCtx<'a> {
                 return;
             }
 
+            t if html_landmark_name(t).is_some() => {
+                let name = html_landmark_name(t).unwrap();
+                let id_prefix = self.pending_id.take()
+                    .map(|i| crate::tags::format_id(&i)).unwrap_or_default();
+                let children = self.collect_landmark_children(node);
+                if !children.is_empty() {
+                    let mut obj = FfonElement::new_obj(format!("{id_prefix}{name}"));
+                    for c in children { obj.as_obj_mut().unwrap().push(c); }
+                    self.add_to_current(obj);
+                }
+            }
+
             t if HTML_CONTAINER_TAGS.contains(&t) => { self.process_children(node); }
             _ => {
                 let has_block = node.children().filter_map(scraper::ElementRef::wrap).any(|c| {
@@ -1152,6 +1180,30 @@ impl<'a> HtmlParseCtx<'a> {
         form_children
     }
 
+    /// Walk a landmark element's children in an isolated root/stack, finalize any
+    /// open heading groups, and return the collected elements so the caller can
+    /// wrap them in a single named Obj. Form counters are intentionally *shared*
+    /// (not reset) so a form nested inside a landmark still registers its CSS
+    /// selectors in the global form map.
+    fn collect_landmark_children(&mut self, node: scraper::ElementRef) -> Vec<FfonElement> {
+        let saved_root  = std::mem::take(&mut self.root);
+        let saved_stack = std::mem::take(&mut self.stack);
+        self.process_children(node);
+        // Flush the heading stack re-parenting each entry into the heading above
+        // it, so nested heading hierarchy (h1 > h2 > …) is preserved rather than
+        // flattened into reversed siblings.
+        while let Some((_, entry)) = self.stack.pop() {
+            if let Some((_, parent)) = self.stack.last_mut() {
+                parent.as_obj_mut().unwrap().push(entry);
+            } else {
+                self.root.push(entry);
+            }
+        }
+        let children = std::mem::replace(&mut self.root, saved_root);
+        self.stack = saved_stack;
+        children
+    }
+
     fn emit_submit_button(&mut self, form_n: usize, name: &str, id_attr: &str, display: &str) {
         let fn_name = format!("submit:form_{form_n}");
         self.add_to_current(FfonElement::new_str(format!("<button>{fn_name}</button>{display}")));
@@ -1224,6 +1276,126 @@ pub fn html_to_ffon(html: &str, base_url: &str) -> Vec<FfonElement> {
     html_to_ffon_with_forms(html, base_url).0
 }
 
+/// Container keys that the walker assigns generically. A page can carry many of
+/// each (every `<ul>` is "list", every `<nav>` is "navigation"), leaving them
+/// indistinguishable and unfindable, so the navigability pass renames them from
+/// their content. `main content` / `footer` are deliberately excluded — they are
+/// near-always singletons and their names are already meaningful.
+const GENERIC_CONTAINER_KEYS: &[&str] = &[
+    "list", "ordered list", "navigation", "complementary", "definition list",
+];
+
+/// Split a leading `<id>…</id>` metadata prefix off a key, returning
+/// `(prefix_including_tags, remainder)`. The prefix is re-prepended after a
+/// rename so id metadata survives.
+fn split_id_prefix(key: &str) -> (&str, &str) {
+    const OPEN: &str = "<id>";
+    const CLOSE: &str = "</id>";
+    if let Some(after) = key.strip_prefix(OPEN) {
+        if let Some(idx) = after.find(CLOSE) {
+            let end = OPEN.len() + idx + CLOSE.len();
+            return (&key[..end], &key[end..]);
+        }
+    }
+    ("", key)
+}
+
+/// The generic kind of a container key, ignoring any `<id>` prefix.
+fn generic_container_kind(key: &str) -> Option<&'static str> {
+    let (_, bare) = split_id_prefix(key);
+    GENERIC_CONTAINER_KEYS.iter().copied().find(|g| bare == *g)
+}
+
+/// Best-effort short visible label for a child node, used to summarize a generic
+/// container. Returns `None` for interactive form-control cells (they don't
+/// describe the container) and for empties.
+fn nav_sample_label(text: &str) -> Option<String> {
+    use crate::tags;
+    if tags::has_button(text) || tags::has_input(text) || tags::has_password(text)
+        || tags::has_checkbox(text) || tags::has_radio(text)
+    {
+        return None;
+    }
+    let (_, mut rest) = split_id_prefix(text);
+    // Keep the visible anchor text, dropping a trailing <link>url</link>.
+    if let Some(i) = rest.find("<link>") { rest = &rest[..i]; }
+    let mut rest = rest.trim();
+    // Strip list-item markers ("- ", "1. ").
+    if let Some(stripped) = rest.strip_prefix("- ") { rest = stripped.trim_start(); }
+    else if let Some((num, tail)) = rest.split_once(". ") {
+        if !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()) { rest = tail.trim_start(); }
+    }
+    if rest.is_empty() { return None; }
+    // Cap length so summaries stay tidy.
+    let capped: String = rest.chars().take(40).collect();
+    Some(if capped.len() < rest.len() { format!("{}…", capped.trim_end()) } else { capped })
+}
+
+/// Collapse a chain of single-child wrapper Objs where at least one side is a
+/// generic container, e.g. `navigation → list → links` becomes one node. When
+/// the outer key is generic but the inner is meaningful, the inner name wins.
+fn collapse_redundant_wrapper(o: &mut FfonObject) {
+    while o.children.len() == 1 && o.children[0].is_obj() {
+        let inner = o.children[0].as_obj().unwrap();
+        let outer_generic = generic_container_kind(&o.key).is_some();
+        let inner_generic = generic_container_kind(&inner.key).is_some();
+        // Only merge redundant *container* levels: at least one side must be a
+        // generic wrapper, and the inner must itself be a container (generic, or
+        // holding its own children). Never collapse a wrapper into a lone leaf
+        // such as a single link — that would destroy the container entirely.
+        if !(outer_generic || inner_generic) { break; }
+        if !inner_generic && inner.children.is_empty() { break; }
+        let FfonElement::Obj(child) = o.children.remove(0) else { unreachable!() };
+        if outer_generic && !inner_generic { o.key = child.key; }
+        o.children = child.children;
+    }
+}
+
+/// Improve navigability of a freshly built FFON tree. Runs two whole-tree passes
+/// in order: (1) collapse redundant generic wrappers, then (2) rename remaining
+/// generic containers from a sample of their content. The passes are kept
+/// separate so collapsing sees the *original* generic keys (renaming first would
+/// make an inner "list" look meaningful and beat the outer "navigation").
+///
+/// Only keys change, plus removal of redundant wrapper levels; form-map paths
+/// resolve by `form_N` segment and navigation is index-based, so neither breaks.
+fn improve_navigability(elems: &mut Vec<FfonElement>) {
+    collapse_generic_wrappers(elems);
+    rename_generic_containers(elems);
+}
+
+fn collapse_generic_wrappers(elems: &mut [FfonElement]) {
+    for e in elems.iter_mut() {
+        if let FfonElement::Obj(o) = e {
+            collapse_generic_wrappers(&mut o.children);
+            collapse_redundant_wrapper(o);
+        }
+    }
+}
+
+fn rename_generic_containers(elems: &mut [FfonElement]) {
+    for e in elems.iter_mut() {
+        let FfonElement::Obj(o) = e else { continue };
+        rename_generic_containers(&mut o.children);
+        if let Some(kind) = generic_container_kind(&o.key) {
+            let sample: Vec<String> = o.children.iter()
+                .filter_map(|c| nav_sample_label(match c {
+                    FfonElement::Str(s) => s,
+                    FfonElement::Obj(inner) => &inner.key,
+                }))
+                .take(3)
+                .collect();
+            if !sample.is_empty() {
+                let (id_prefix, _) = split_id_prefix(&o.key);
+                let extra = o.children.len().saturating_sub(sample.len());
+                let mut name = format!("{id_prefix}{kind}: {}", sample.join(", "));
+                if extra > 0 { name.push_str(&format!(" +{extra}")); }
+                o.key = name;
+            }
+        }
+    }
+}
+
 /// Like `html_to_ffon`, but also returns a [`FormMap`] mapping FFON path
 /// segments (e.g. `"form_1/email"`) to their CSS selectors and control kinds.
 ///
@@ -1244,7 +1416,8 @@ pub fn html_to_ffon_with_forms(html: &str, base_url: &str) -> (Vec<FfonElement>,
             ctx.finalize_with_forms()
         }
     };
-    let elems = if r.is_empty() { vec![FfonElement::new_str("(empty)")] } else { r };
+    let mut elems = if r.is_empty() { vec![FfonElement::new_str("(empty)")] } else { r };
+    improve_navigability(&mut elems);
     let form_map: FormMap = map_entries.into_iter().collect();
     (elems, form_map)
 }
@@ -2329,6 +2502,110 @@ mod tests {
         assert!(found, "expected link obj in {elems:?}");
     }
 
+    // ---- Landmark wrapper tests --------------------------------------------
+
+    #[test]
+    fn html_nav_becomes_named_obj() {
+        let elems = html_to_ffon(
+            r#"<nav><a href="https://x.com/a">A</a><a href="https://x.com/b">B</a></nav>"#, "");
+        assert_eq!(elems.len(), 1);
+        let obj = elems[0].as_obj().expect("nav should be an Obj");
+        // The landmark name is enriched from its content by the navigability pass.
+        assert!(obj.key.starts_with("navigation"), "got {:?}", obj.key);
+        assert_eq!(obj.children.len(), 2, "both nav links grouped under it");
+    }
+
+    #[test]
+    fn html_main_wraps_heading_structure() {
+        let elems = html_to_ffon("<main><h1>Title</h1><p>Body</p></main>", "");
+        assert_eq!(elems.len(), 1);
+        let obj = elems[0].as_obj().expect("main should be an Obj");
+        assert_eq!(obj.key, "main content");
+        // The h1 still forms a heading group nested inside the landmark.
+        let heading = obj.children[0].as_obj().expect("heading group inside main");
+        assert_eq!(heading.key, "Title");
+        assert_eq!(heading.children.len(), 1);
+    }
+
+    #[test]
+    fn html_landmark_preserves_heading_nesting() {
+        // h2 must nest *inside* the h1 group, in source order — not flatten into
+        // reversed siblings when the landmark's heading stack is flushed.
+        let elems = html_to_ffon(
+            "<main><h1>Welcome</h1><p>Intro</p><h2>Features</h2><p>Detail</p></main>", "");
+        assert_eq!(elems.len(), 1);
+        let main = elems[0].as_obj().unwrap();
+        assert_eq!(main.key, "main content");
+        assert_eq!(main.children.len(), 1, "only the h1 group at top of main");
+        let h1 = main.children[0].as_obj().unwrap();
+        assert_eq!(h1.key, "Welcome");
+        // h1 holds its intro paragraph and the nested h2 group.
+        let h2 = h1.children.iter().find_map(|c| c.as_obj()).expect("h2 nested under h1");
+        assert_eq!(h2.key, "Features");
+    }
+
+    #[test]
+    fn html_footer_becomes_named_obj() {
+        let elems = html_to_ffon("<footer><p>Copyright 2026</p></footer>", "");
+        let obj = elems.iter().find_map(|e| e.as_obj()).expect("footer obj");
+        assert_eq!(obj.key, "footer");
+    }
+
+    #[test]
+    fn html_empty_nav_emits_nothing() {
+        let elems = html_to_ffon("<nav></nav><p>real content</p>", "");
+        assert!(
+            elems.iter().all(|e| e.as_obj().map_or(true, |o| o.key != "navigation")),
+            "empty nav should not emit a navigation obj: {elems:?}",
+        );
+    }
+
+    // ---- Navigability pass tests -------------------------------------------
+
+    #[test]
+    fn nav_list_double_wrapper_collapses_and_renames() {
+        // <nav><ul>links</ul></nav> → one node named from its links, no "list" level.
+        let elems = html_to_ffon(
+            r#"<nav><ul>
+                 <li><a href="https://x.com/a">Home</a></li>
+                 <li><a href="https://x.com/b">Docs</a></li>
+               </ul></nav>"#, "");
+        assert_eq!(elems.len(), 1);
+        let obj = elems[0].as_obj().unwrap();
+        assert_eq!(obj.key, "navigation: Home, Docs", "got {:?}", obj.key);
+        // Collapsed: the links are direct children, not buried under a "list".
+        assert_eq!(obj.children.len(), 2);
+        assert!(obj.children.iter().all(|c| c.is_obj()));
+    }
+
+    #[test]
+    fn generic_list_renamed_from_items_with_overflow_count() {
+        let elems = html_to_ffon(
+            "<ul><li>Nederlands</li><li>English</li><li>Francais</li><li>Deutsch</li></ul>", "");
+        let obj = elems[0].as_obj().unwrap();
+        assert_eq!(obj.key, "list: Nederlands, English, Francais +1", "got {:?}", obj.key);
+    }
+
+    #[test]
+    fn rename_is_content_driven_not_site_specific() {
+        // The exact same generic markup yields a name from whatever content it holds.
+        let a = html_to_ffon("<nav><ul><li><a href='/p'>Pears</a></li></ul></nav>", "");
+        let b = html_to_ffon("<nav><ul><li><a href='/q'>Quinces</a></li></ul></nav>", "");
+        assert_eq!(a[0].as_obj().unwrap().key, "navigation: Pears");
+        assert_eq!(b[0].as_obj().unwrap().key, "navigation: Quinces");
+    }
+
+    #[test]
+    fn empty_generic_list_keeps_generic_name() {
+        // Nothing to sample → leave the generic key rather than inventing a name.
+        let elems = html_to_ffon("<ul></ul><p>after</p>", "");
+        // The empty <ul> produces no children, so no "list" obj survives at all,
+        // but a list with only blank items must not panic or mislabel.
+        let elems2 = html_to_ffon("<ul><li>  </li></ul><p>x</p>", "");
+        assert!(elems.iter().chain(elems2.iter()).all(|e|
+            e.as_obj().map_or(true, |o| !o.key.starts_with("list: "))));
+    }
+
     // ---- Form parsing tests ------------------------------------------------
 
     #[test]
@@ -2526,7 +2803,7 @@ mod tests {
     #[test]
     fn html_li_with_nested_heading() {
         let elems = html_to_ffon("<ul><li><h3>Sub</h3></li></ul>", "");
-        let list = elems.iter().find(|e| e.as_obj().map_or(false, |o| o.key == "list"))
+        let list = elems.iter().find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("list")))
             .expect("expected list obj");
         let found = list.as_obj().unwrap().children.iter()
             .any(|e| e.as_obj().map_or(false, |o| o.key.contains("Sub")));
@@ -2538,7 +2815,7 @@ mod tests {
     #[test]
     fn html_li_text_gets_bullet_prefix() {
         let elems = html_to_ffon("<ul><li>Alpha</li><li>Beta</li></ul>", "");
-        let list = elems.iter().find(|e| e.as_obj().map_or(false, |o| o.key == "list"))
+        let list = elems.iter().find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("list")))
             .expect("expected a list obj");
         let children = &list.as_obj().unwrap().children;
         assert_eq!(children[0].as_str().unwrap(), "- Alpha");
@@ -2548,7 +2825,7 @@ mod tests {
     #[test]
     fn html_ol_item_gets_number_prefix() {
         let elems = html_to_ffon("<ol><li>First</li><li>Second</li></ol>", "");
-        let list = elems.iter().find(|e| e.as_obj().map_or(false, |o| o.key == "ordered list"))
+        let list = elems.iter().find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("ordered list")))
             .expect("expected an ordered list obj");
         let children = &list.as_obj().unwrap().children;
         assert_eq!(children[0].as_str().unwrap(), "1. First");
@@ -2558,7 +2835,7 @@ mod tests {
     #[test]
     fn html_link_inside_li_rendered() {
         let elems = html_to_ffon(r#"<ul><li><a href="https://x.com">X</a></li></ul>"#, "");
-        let list = elems.iter().find(|e| e.as_obj().map_or(false, |o| o.key == "list"))
+        let list = elems.iter().find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("list")))
             .expect("expected a list obj");
         let children = &list.as_obj().unwrap().children;
         assert!(!children.is_empty(), "list should have at least one child");
