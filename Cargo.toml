@@ -17,8 +17,8 @@ scraper = "0.27"
 url = "2"
 libloading = "0.9"
 trash = "5"
-fluent = "0.16"
-fluent-langneg = "0.13"
+fluent = "0.17"
+fluent-langneg = "0.14"
 unic-langid = "0.9"
 intl-memoizer = "0.5"
 
@@ -29,5 +29,5 @@ xdg = "3"
 winreg = "0.56"
 
 [dev-dependencies]
-mockall = "0.14"
+mockall = "0.15"
 tempfile = "3"
