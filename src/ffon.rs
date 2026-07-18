@@ -1148,7 +1148,13 @@ impl<'a> HtmlParseCtx<'a> {
 
             t if HTML_CONTAINER_TAGS.contains(&t) => { self.process_children(node); }
             _ => {
-                let has_block = node.children().filter_map(scraper::ElementRef::wrap).any(|c| {
+                // Look for a block-level element anywhere in the subtree, not
+                // just among the direct children. Sites commonly wrap their real
+                // blocks (<p>, <h2>, …) inside custom elements we don't recognize
+                // (e.g. <al-widget>, <micro-copy>). A shallow one-level check
+                // finds only more custom wrappers, misclassifies the whole
+                // subtree as inline, and flattens it into a single string.
+                let has_block = node.descendants().filter_map(scraper::ElementRef::wrap).any(|c| {
                     let t = c.value().name();
                     html_heading_level(t).is_some()
                         || HTML_BLOCK_HANDLED_TAGS.contains(&t)
@@ -2603,6 +2609,32 @@ mod tests {
         let heading = obj.children[0].as_obj().expect("heading group inside main");
         assert_eq!(heading.key, "Title");
         assert_eq!(heading.children.len(), 1);
+    }
+
+    #[test]
+    fn html_custom_element_wrappers_do_not_collapse_blocks() {
+        // Real blocks (h2/p) nested inside unrecognized custom elements must
+        // still split into separate FFON nodes rather than flatten into one
+        // string. The detection is structural (any block descendant at any
+        // depth), so it holds for ANY custom element / web component, not a
+        // hard-coded tag list.
+        let elems = html_to_ffon(
+            "<my-widgets><my-widget><div>\
+               <h2>Alpha</h2><p>First</p>\
+             </div></my-widget><my-widget><div>\
+               <h2>Beta</h2><p>Second</p>\
+             </div></my-widget></my-widgets>",
+            "",
+        );
+        let headings: Vec<String> =
+            elems.iter().filter_map(|e| e.as_obj()).map(|o| o.key.clone()).collect();
+        assert!(headings.iter().any(|k| k == "Alpha"), "got {elems:?}");
+        assert!(headings.iter().any(|k| k == "Beta"), "got {elems:?}");
+        // No single Str node swallowing all the text.
+        let collapsed = elems.iter().any(|e| {
+            matches!(e, FfonElement::Str(s) if s.contains("Alpha") && s.contains("Beta"))
+        });
+        assert!(!collapsed, "content collapsed into one string: {elems:?}");
     }
 
     #[test]

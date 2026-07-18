@@ -1,6 +1,6 @@
 [package]
 name = "sicompass-sdk"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "Sicompass provider SDK — FFON types, Provider trait, tag parsing, platform utils"
