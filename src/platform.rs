@@ -269,14 +269,67 @@ pub fn get_applications() -> Vec<Application> {
 
 #[cfg(target_os = "linux")]
 fn get_applications_linux() -> Vec<Application> {
-    let dirs = [
-        PathBuf::from("/usr/share/applications"),
-        PathBuf::from("/usr/local/share/applications"),
-        home_dir()
-            .map(|h| h.join(".local/share/applications"))
-            .unwrap_or_default(),
-    ];
+    let dirs = application_dirs(
+        std::env::var("XDG_DATA_HOME").ok().as_deref(),
+        std::env::var("XDG_DATA_DIRS").ok().as_deref(),
+        home_dir().as_deref(),
+    );
     get_applications_from_dirs(&dirs)
+}
+
+/// XDG application directories in lookup order: `$XDG_DATA_HOME/applications`
+/// first (a user entry overrides a system one), then `$XDG_DATA_DIRS`. Both fall
+/// back to the defaults the basedir spec mandates when unset or empty.
+///
+/// Honouring `XDG_DATA_DIRS` is what makes this work on distributions that
+/// install nothing under `/usr/share` (NixOS, Guix), where desktop entries are
+/// reachable only through that variable. The historical hardcoded paths are
+/// appended last so setups that never export the variables keep working.
+///
+/// Env values are passed in rather than read here so the ordering is testable
+/// without mutating process environment.
+#[cfg(target_os = "linux")]
+fn application_dirs(
+    data_home: Option<&str>,
+    data_dirs: Option<&str>,
+    home: Option<&std::path::Path>,
+) -> Vec<PathBuf> {
+    fn push(dirs: &mut Vec<PathBuf>, base: &str) {
+        // The spec says relative entries are invalid and must be ignored.
+        if base.is_empty() || !base.starts_with('/') {
+            return;
+        }
+        let dir = PathBuf::from(base).join("applications");
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+
+    let mut dirs: Vec<PathBuf> = Vec::new();
+
+    match data_home.filter(|s| !s.is_empty()) {
+        Some(xdg) => push(&mut dirs, xdg),
+        None => {
+            if let Some(h) = home {
+                push(&mut dirs, &h.join(".local/share").to_string_lossy());
+            }
+        }
+    }
+
+    let dirs_var = data_dirs.filter(|s| !s.is_empty());
+    for base in dirs_var.unwrap_or("/usr/local/share:/usr/share").split(':') {
+        push(&mut dirs, base);
+    }
+
+    // Legacy fallbacks: harmless when already listed, and they keep a machine
+    // with an unusual XDG_DATA_DIRS from losing its system-wide entries.
+    push(&mut dirs, "/usr/local/share");
+    push(&mut dirs, "/usr/share");
+    if let Some(h) = home {
+        push(&mut dirs, &h.join(".local/share").to_string_lossy());
+    }
+
+    dirs
 }
 
 /// Parse a single `.desktop` file's text content.
@@ -741,5 +794,72 @@ mod linux_tests {
         fs::write(&b, "[Desktop Entry]\nType=Application\nName=AppB\nExec=app-b\n").unwrap();
         let apps = get_applications_from_dirs(&[tmp.path().to_path_buf()]);
         assert_eq!(apps.len(), 2);
+    }
+
+    // ---- application_dirs (XDG lookup order) -------------------------------
+
+    fn dirs(data_home: Option<&str>, data_dirs: Option<&str>) -> Vec<String> {
+        application_dirs(data_home, data_dirs, Some(std::path::Path::new("/home/u")))
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn test_application_dirs_defaults_when_env_unset() {
+        assert_eq!(
+            dirs(None, None),
+            [
+                "/home/u/.local/share/applications",
+                "/usr/local/share/applications",
+                "/usr/share/applications",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_application_dirs_honours_xdg_data_dirs() {
+        // NixOS-shaped: nothing under /usr, entries reachable only via the var.
+        let got = dirs(None, Some("/run/current-system/sw/share:/nix/profile/share"));
+        assert_eq!(got[0], "/home/u/.local/share/applications");
+        assert_eq!(got[1], "/run/current-system/sw/share/applications");
+        assert_eq!(got[2], "/nix/profile/share/applications");
+    }
+
+    #[test]
+    fn test_application_dirs_honours_xdg_data_home() {
+        let got = dirs(Some("/custom/data"), None);
+        // XDG_DATA_HOME wins the lookup order. ~/.local/share still appears as a
+        // legacy fallback (the pre-XDG code always scanned it), just later.
+        assert_eq!(got[0], "/custom/data/applications");
+        let home_pos = got.iter().position(|d| d == "/home/u/.local/share/applications");
+        assert!(home_pos.is_some_and(|i| i > 0), "home dir should follow XDG_DATA_HOME: {got:?}");
+    }
+
+    #[test]
+    fn test_application_dirs_empty_vars_fall_back_to_defaults() {
+        assert_eq!(dirs(Some(""), Some("")), dirs(None, None));
+    }
+
+    #[test]
+    fn test_application_dirs_skips_relative_and_empty_entries() {
+        let got = dirs(None, Some("/opt/share::relative/share:/usr/share"));
+        assert!(got.contains(&"/opt/share/applications".to_string()));
+        assert!(!got.iter().any(|d| d.contains("relative")));
+    }
+
+    #[test]
+    fn test_application_dirs_deduplicates() {
+        let got = dirs(None, Some("/usr/share:/usr/share:/usr/local/share"));
+        let uniq: HashSet<&String> = got.iter().collect();
+        assert_eq!(uniq.len(), got.len(), "duplicate dirs in {got:?}");
+    }
+
+    #[test]
+    fn test_application_dirs_keeps_legacy_paths_as_fallback() {
+        // An XDG_DATA_DIRS that omits /usr/share must not lose system entries.
+        let got = dirs(None, Some("/run/current-system/sw/share"));
+        assert!(got.contains(&"/usr/share/applications".to_string()));
+        assert!(got.contains(&"/usr/local/share/applications".to_string()));
     }
 }
