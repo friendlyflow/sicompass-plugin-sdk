@@ -35,6 +35,7 @@ pub struct SearchResultItem {
 /// defaults that return false/empty/None.
 ///
 /// Providers are `Send + 'static` so they can be boxed and moved across threads.
+#[async_trait::async_trait]
 pub trait Provider: Send + 'static {
     // ---- Identity ----------------------------------------------------------
 
@@ -133,10 +134,13 @@ pub trait Provider: Send + 'static {
     /// Reverse a previously emitted timeline entry. Providers match on the
     /// variants they emit; others can leave this as a no-op. Sets `error` on
     /// failure.
-    fn undo(&mut self, _entry: &TimelineEntry, _error: &mut String) {}
+    /// Async so a provider can await real I/O instead of blocking the render
+    /// thread. `undo` and `redo` are not part of `ProviderOpsC`, so this costs
+    /// no C ABI change and no plugin breakage.
+    async fn undo(&mut self, _entry: &TimelineEntry, _error: &mut String) {}
 
     /// Re-apply a previously emitted timeline entry. Same shape as `undo`.
-    fn redo(&mut self, _entry: &TimelineEntry, _error: &mut String) {}
+    async fn redo(&mut self, _entry: &TimelineEntry, _error: &mut String) {}
 
     // ---- Optional: interactive element callbacks ---------------------------
 
@@ -331,6 +335,7 @@ pub trait Provider: Send + 'static {
     /// `ESC[?1049h` (vim, less, htop, …) and wanting to surface as the
     /// interactive dashboard automatically.
     fn take_dashboard_request(&mut self) -> Option<DashboardRequest> { None }
+
 
     /// Enable Ctrl+S/O save/load for this provider.
     fn supports_config_files(&self) -> bool { false }

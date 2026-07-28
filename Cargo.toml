@@ -1,6 +1,6 @@
 [package]
 name = "sicompass-sdk"
-version = "0.1.6"
+version = "0.2.0"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "Sicompass provider SDK — FFON types, Provider trait, tag parsing, platform utils"
@@ -10,6 +10,8 @@ keywords = ["sicompass", "plugin", "sdk", "provider"]
 categories = ["api-bindings"]
 
 [dependencies]
+async-trait = "0.1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 unicode-normalization = "0.1"

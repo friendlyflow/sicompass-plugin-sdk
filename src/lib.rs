@@ -35,3 +35,28 @@ pub use timeline::{
     TimelineEntry, TrashedTree,
 };
 pub use url_fetcher::{fetch_url_to_ffon, register_url_fetcher};
+
+/// Drive an async `Provider` method to completion from synchronous code.
+///
+/// `Provider::undo` and `Provider::redo` are async so an implementation can
+/// await real I/O rather than nesting a runtime inside the render thread.
+/// Callers that are still synchronous (the app's timeline handling, and tests)
+/// use this rather than each growing its own runtime.
+///
+/// Falls back to `block_in_place` when a runtime is already current, so calling
+/// it from inside one does not panic.
+pub fn block_on<F: std::future::Future>(fut: F) -> F::Output {
+    static RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => tokio::task::block_in_place(|| handle.block_on(fut)),
+        Err(_) => RT
+            .get_or_init(|| {
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .thread_name("sicompass-sdk")
+                    .build()
+                    .expect("failed to build the SDK runtime")
+            })
+            .block_on(fut),
+    }
+}
