@@ -28,7 +28,8 @@ pub use placeholders::{
     CI_PLACEHOLDER, I_PLACEHOLDER,
 };
 pub use provider::{
-    create_provider_by_name, register_provider_factory, ListItem, Provider, SearchResultItem,
+    create_provider_by_name, register_provider_factory, ListItem, NavigationRequest, Provider,
+    SearchResultItem,
 };
 pub use timeline::{
     ChatOpKind, FsOpKind, FsSideEffect, ImapOpKind, NavKind, StructuralOp, StructuralPayload,

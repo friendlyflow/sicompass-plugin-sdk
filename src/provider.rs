@@ -14,6 +14,23 @@ pub struct ListItem {
     pub data: String,
 }
 
+/// A cursor move a provider can ask the app to perform outside a keypress.
+///
+/// Returned by [`Provider::take_navigation_request`]. Used when background
+/// work finishes and leaving the cursor where it was would strand the user on
+/// a stale row — e.g. the web browser finishing a page load while the cursor
+/// still sits on the URL bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavigationRequest {
+    /// Descend into the children of the element the cursor is on — the same
+    /// move as pressing Right. Honoured only at the provider's own top level
+    /// (the level its `fetch()` returns): deeper, the user is already inside
+    /// the content the request is about. Ignored when the cursor is not inside
+    /// the requesting provider, when it is on an element without a next layer,
+    /// or while the user is in insert mode.
+    EnterChildren,
+}
+
 /// A result item from deep search (Ctrl+F).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchResultItem {
@@ -335,6 +352,16 @@ pub trait Provider: Send + 'static {
     /// `ESC[?1049h` (vim, less, htop, …) and wanting to surface as the
     /// interactive dashboard automatically.
     fn take_dashboard_request(&mut self) -> Option<DashboardRequest> { None }
+
+    /// Take any pending cursor move this provider has accumulated since the
+    /// last poll.
+    ///
+    /// The app calls this every frame after `tick()` for every provider, with
+    /// the same two-call semantics as `take_dashboard_request`: a second call
+    /// without an intervening request must return `None`. Only the *active*
+    /// provider's request is honoured, so a background provider can never yank
+    /// the cursor out of the view the user is reading. Default: no request.
+    fn take_navigation_request(&mut self) -> Option<NavigationRequest> { None }
 
 
     /// Enable Ctrl+S/O save/load for this provider.
@@ -670,6 +697,12 @@ mod tests {
     fn test_provider_needs_refresh_default_false() {
         let p = SimpleProvider::new("t");
         assert!(!p.needs_refresh());
+    }
+
+    #[test]
+    fn test_provider_take_navigation_request_default_none() {
+        let mut p = SimpleProvider::new("t");
+        assert!(p.take_navigation_request().is_none());
     }
 
     #[test]
