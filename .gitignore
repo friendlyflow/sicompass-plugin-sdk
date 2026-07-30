@@ -3,3 +3,11 @@ Cargo.lock
 graphify-out/
 CLAUDE.md
 .claude/
+
+# sicompass-pdk and examples/* are their own workspace roots (they only build for
+# wasm32-unknown-unknown), so each grows its own target dir and lockfile.
+target/
+
+# Componentized output of examples/hello-plugin, produced by
+# scripts/verify-guest.sh. Regenerate rather than commit.
+*.wasm

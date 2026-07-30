@@ -505,23 +505,33 @@ impl Provider for GenericProvider {
 }
 
 // ---------------------------------------------------------------------------
-// Provider factory registry
+// Provider factory registry (host-only)
 // ---------------------------------------------------------------------------
+//
+// A process-global list of boxed closures, populated at link time by
+// `sicompass_builtins::register_all()`. Neither half of that works in a WASM
+// guest: each component instance has its own linear memory, so there is no shared
+// registry to register into, and a guest exports one provider rather than a set of
+// factories. The host instantiates a WASM provider from its `plugin.json` instead.
 
 /// A factory function that creates a `Provider` by name.
+#[cfg(feature = "host")]
 pub type ProviderFactory = Box<dyn Fn() -> Box<dyn Provider> + Send + Sync>;
 
 /// Global provider factory registry.
 ///
 /// Call `register_provider_factory` at startup to make a provider
 /// instantiable by name. Use `create_provider` to instantiate one.
+#[cfg(feature = "host")]
 static REGISTRY: std::sync::OnceLock<std::sync::Mutex<Vec<(String, ProviderFactory)>>> =
     std::sync::OnceLock::new();
 
+#[cfg(feature = "host")]
 fn registry() -> &'static std::sync::Mutex<Vec<(String, ProviderFactory)>> {
     REGISTRY.get_or_init(|| std::sync::Mutex::new(Vec::new()))
 }
 
+#[cfg(feature = "host")]
 pub fn register_provider_factory(
     name: &str,
     factory: impl Fn() -> Box<dyn Provider> + Send + Sync + 'static,
@@ -529,6 +539,7 @@ pub fn register_provider_factory(
     registry().lock().unwrap().push((name.to_owned(), Box::new(factory)));
 }
 
+#[cfg(feature = "host")]
 pub fn create_provider_by_name(name: &str) -> Option<Box<dyn Provider>> {
     let guard = registry().lock().unwrap();
     guard.iter().find(|(n, _)| n == name).map(|(_, f)| f())
@@ -755,8 +766,9 @@ mod tests {
         assert_eq!(p.current_path(), "/a/b/c");
     }
 
-    // --- Factory registry ---
+    // --- Factory registry (host-only) ---
 
+    #[cfg(feature = "host")]
     #[test]
     fn test_factory_register_and_create() {
         register_provider_factory("test_factory_provider", || {
@@ -769,6 +781,7 @@ mod tests {
         assert_eq!(elems[0].as_str(), Some("from factory"));
     }
 
+    #[cfg(feature = "host")]
     #[test]
     fn test_factory_create_unknown_returns_none() {
         assert!(create_provider_by_name("__nonexistent__").is_none());

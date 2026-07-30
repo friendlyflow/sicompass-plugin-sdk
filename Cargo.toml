@@ -9,27 +9,64 @@ readme = "README.md"
 keywords = ["sicompass", "plugin", "sdk", "provider"]
 categories = ["api-bindings"]
 
+# The `host` feature is on by default, so existing consumers (the sicompass app
+# and every built-in `lib_*` crate) are unaffected and need no changes.
+#
+# WASM guests build with `default-features = false`, which drops the modules that
+# only make sense inside the host process — OS trash, host config paths and app
+# launching, the `dlopen`/subprocess plugin loaders, the process-global registries
+# (provider factories, builtin manifests, the URL-fetch callback), the Fluent
+# localizer, and the tokio-backed `block_on`. A guest reaches equivalents through
+# imported host functions instead, which is the whole point of the sandbox: the
+# import surface *is* the capability set.
+#
+# Note the polarity: `host` ADDS capability rather than a `types-only` feature
+# subtracting it. Cargo features are additive and unify across a dependency graph,
+# so a subtractive feature would let any crate in the graph strip these modules
+# for every other consumer.
+[features]
+default = ["host"]
+host = [
+    "dep:tokio",
+    "dep:libloading",
+    "dep:trash",
+    "dep:fluent",
+    "dep:fluent-langneg",
+    "dep:unic-langid",
+    "dep:intl-memoizer",
+    "dep:xdg",
+    "dep:winreg",
+]
+
 [dependencies]
+# Always available — these all compile for wasm32-unknown-unknown, so guests get
+# the full FFON data model including the HTML -> FFON pipeline.
 async-trait = "0.1"
-tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 unicode-normalization = "0.1"
 scraper = "0.27"
 url = "2"
-libloading = "0.9"
-trash = "5"
-fluent = "0.17"
-fluent-langneg = "0.14"
-unic-langid = "0.9"
-intl-memoizer = "0.5"
+
+# Host-only. `trash` and `tokio` genuinely fail to build for
+# wasm32-unknown-unknown; `libloading` and the Fluent stack happen to compile but
+# are meaningless in a guest, and handing an author a `ScriptProvider` that shells
+# out to a `bun` binary that cannot exist is worse than not offering it.
+tokio = { version = "1", features = ["rt", "rt-multi-thread"], optional = true }
+libloading = { version = "0.9", optional = true }
+trash = { version = "5", optional = true }
+fluent = { version = "0.17", optional = true }
+fluent-langneg = { version = "0.14", optional = true }
+unic-langid = { version = "0.9", optional = true }
+intl-memoizer = { version = "0.5", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-xdg = "3"
+xdg = { version = "3", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winreg = "0.56"
+winreg = { version = "0.56", optional = true }
 
 [dev-dependencies]
 mockall = "0.15"
 tempfile = "3"
+wit-parser = "0.254.0"
