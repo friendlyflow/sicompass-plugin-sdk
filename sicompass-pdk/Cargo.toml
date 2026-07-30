@@ -13,6 +13,7 @@ description = "Sicompass plugin development kit — build sandboxed WASM provide
 repository = "https://github.com/friendlyflow/sicompass-plugin-sdk"
 keywords = ["sicompass", "plugin", "wasm", "component", "wit"]
 categories = ["api-bindings", "wasm"]
+readme = "README.md"
 # `wit` is a symlink to the canonical ../wit so there is one source of truth in the
 # repo. `cargo package` follows it and materializes a real copy in the published
 # artifact.
@@ -26,5 +27,8 @@ crate-type = ["cdylib", "rlib"]
 # trash, host config paths, the process-global registries, the tokio bridge) and
 # leaves the portable data model: FFON with its binary codec, tags, timeline
 # records, dashboard types.
-sicompass-sdk = { version = "0.2.0", path = "..", default-features = false }
+# 0.3.0 is a hard floor: it introduced the `host` feature. Against 0.2.x
+# `default-features = false` is a no-op — that version has no features at all — so
+# the guest would drag in `trash` and `tokio`, neither of which builds for wasm.
+sicompass-sdk = { version = "0.3.0", path = "..", default-features = false }
 wit-bindgen = "0.60.0"
