@@ -26,10 +26,17 @@ your `plugin.json` declares a non-empty `allowedHosts`. Reference something in
 
 ## Crates
 
-| Crate            | For                                     | Install                        |
-| ---------------- | --------------------------------------- | ------------------------------ |
-| `sicompass-sdk`  | the data model, shared by host and guest | `cargo add sicompass-sdk`      |
-| `sicompass-pdk`  | writing a plugin                        | `cargo add sicompass-pdk`      |
+| Crate            | For                                      | Install                   |
+| ---------------- | ---------------------------------------- | ------------------------- |
+| `sicompass-sdk`  | the data model, shared by host and guest | `cargo add sicompass-sdk` |
+| `sicompass-pdk`  | writing a plugin                         | git dependency (below)    |
+
+`sicompass-pdk` is not on crates.io yet. Depend on it directly for now:
+
+```toml
+[dependencies]
+sicompass-pdk = { git = "https://github.com/friendlyflow/sicompass-plugin-sdk" }
+```
 
 `sicompass-sdk` builds two ways. With default features it is the full host-side
 crate. With `default-features = false` it is the portable half — FFON, tags,
@@ -57,7 +64,7 @@ timeline records, dashboard types — and compiles for `wasm32-unknown-unknown`.
 crate-type = ["cdylib"]
 
 [dependencies]
-sicompass-pdk = "0.1"
+sicompass-pdk = { git = "https://github.com/friendlyflow/sicompass-plugin-sdk" }
 ```
 
 ```rust
@@ -134,8 +141,14 @@ exactly what this design excludes. Treat it as unsupported for now.
 
 ## Releasing
 
-Tags of the form `vX.Y.Z` trigger the release workflow, which publishes the
-`sicompass-sdk` crate to crates.io.
+Tags of the form `vX.Y.Z` trigger the release workflow, which verifies the WIT
+contract and that the guest half still builds for wasm, then publishes
+`sicompass-sdk` to crates.io.
+
+**The workflow's crates.io token is currently invalid.** The publish step has
+failed with `403 Forbidden: authentication failed` on v0.1.6, v0.2.0 and v0.3.0;
+those releases went out via a local `cargo publish` instead. Fix the
+`CARGO_REGISTRY_TOKEN` repository secret to make the automated path work.
 
 ## License
 
