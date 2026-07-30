@@ -29,14 +29,7 @@ your `plugin.json` declares a non-empty `allowedHosts`. Reference something in
 | Crate            | For                                      | Install                   |
 | ---------------- | ---------------------------------------- | ------------------------- |
 | `sicompass-sdk`  | the data model, shared by host and guest | `cargo add sicompass-sdk` |
-| `sicompass-pdk`  | writing a plugin                         | git dependency (below)    |
-
-`sicompass-pdk` is not on crates.io yet. Depend on it directly for now:
-
-```toml
-[dependencies]
-sicompass-pdk = { git = "https://github.com/friendlyflow/sicompass-plugin-sdk" }
-```
+| `sicompass-pdk`  | writing a plugin                         | `cargo add sicompass-pdk` |
 
 `sicompass-sdk` builds two ways. With default features it is the full host-side
 crate. With `default-features = false` it is the portable half — FFON, tags,
@@ -64,7 +57,7 @@ timeline records, dashboard types — and compiles for `wasm32-unknown-unknown`.
 crate-type = ["cdylib"]
 
 [dependencies]
-sicompass-pdk = { git = "https://github.com/friendlyflow/sicompass-plugin-sdk" }
+sicompass-pdk = "0.1"
 ```
 
 ```rust
