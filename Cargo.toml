@@ -28,7 +28,6 @@ categories = ["api-bindings"]
 default = ["host"]
 host = [
     "dep:tokio",
-    "dep:libloading",
     "dep:trash",
     "dep:fluent",
     "dep:fluent-langneg",
@@ -49,11 +48,9 @@ scraper = "0.27"
 url = "2"
 
 # Host-only. `trash` and `tokio` genuinely fail to build for
-# wasm32-unknown-unknown; `libloading` and the Fluent stack happen to compile but
-# are meaningless in a guest, and handing an author a `ScriptProvider` that shells
-# out to a `bun` binary that cannot exist is worse than not offering it.
+# wasm32-unknown-unknown; the Fluent stack happens to compile but is meaningless in
+# a guest, which reaches the host's bundles through the `translate` import instead.
 tokio = { version = "1", features = ["rt", "rt-multi-thread"], optional = true }
-libloading = { version = "0.9", optional = true }
 trash = { version = "5", optional = true }
 fluent = { version = "0.17", optional = true }
 fluent-langneg = { version = "0.14", optional = true }

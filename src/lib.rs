@@ -19,8 +19,7 @@
 /// This crate is the single source of truth for the interface: plugin authors get
 /// it with the SDK version they build against, and the host repo keeps a vendored
 /// copy (for `wasmtime::component::bindgen!`, which needs a path) guarded by a test
-/// asserting the two are byte-identical. Same discipline as the cbindgen-generated
-/// `sicompass_sdk.h`.
+/// asserting the two are byte-identical.
 pub const WIT_SOURCE: &str = include_str!("../wit/sicompass-plugin.wit");
 
 // ---------------------------------------------------------------------------
@@ -54,10 +53,6 @@ pub mod manifest;
 // Host config paths, `atomic_write`, and app launching via `Command`.
 #[cfg(feature = "host")]
 pub mod platform;
-// `NativePlugin` (dlopen) and `ScriptProvider` (subprocess): the loaders WASM
-// replaces.
-#[cfg(feature = "host")]
-pub mod plugin_loader;
 // A process-global fetch callback installed by one provider and consumed by
 // others. Cross-instance wiring like this has to be host-mediated.
 #[cfg(feature = "host")]

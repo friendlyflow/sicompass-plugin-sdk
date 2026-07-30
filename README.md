@@ -5,20 +5,36 @@ The official SDK for writing [Sicompass](https://github.com/friendlyflow/sicompa
 This repo is the source of truth for the SDK. The main `sicompass` repo consumes
 it as a dependency, the same way third-party plugin authors do.
 
-## Languages
+## Third-party plugins are sandboxed WebAssembly
 
-| Language | Install                                       | Header / module name                          |
-| -------- | --------------------------------------------- | --------------------------------------------- |
-| Rust     | `cargo add sicompass-sdk`                     | `use sicompass_sdk::*;`                       |
-| C        | Bundled in the crate, or download from a release tag | `#include <sicompass_sdk.h>`           |
-| TS       | (not yet published)                           | `import { ... } from "@sicompass/sdk"`        |
-| Python   | (not yet published)                           | `from sicompass_sdk import *`                 |
+A plugin is a WASM component. It is not a shared library and not a script.
 
-The Rust crate is the source of truth. The C header `sicompass_sdk.h` is
-generated from the Rust sources via `cbindgen`, committed to this repo, and
-ships inside the published crate (it is also attached to each GitHub release for
-consumers who do not use Cargo). TS and Python packages will be added once a
-wire-protocol surface is stabilized.
+Two reasons. Apple's stores forbid an app from executing downloaded native code,
+and equally forbid shipping a general-purpose interpreter, so neither of the
+older mechanisms could ship at all. And a native in-process plugin held full
+process privileges, which meant every manifest policy — `allowedHosts`, rate
+limits, robots.txt — was advisory: a plugin could simply open its own socket.
+
+A WASM guest has no syscalls. Its entire ability to affect the outside world is
+the set of functions the host links into it, so the capability list is enforced
+by construction rather than by good behaviour. The interface is
+[`wit/sicompass-plugin.wit`](wit/sicompass-plugin.wit), and it is worth reading:
+`interface host` (logging, settings, clock, translation) is always available,
+while `interface net` — the *only* way out to the network — is linked only when
+your `plugin.json` declares a non-empty `allowedHosts`. Reference something in
+`net` without declaring hosts and your component will not even instantiate.
+
+## Crates
+
+| Crate            | For                                     | Install                        |
+| ---------------- | --------------------------------------- | ------------------------------ |
+| `sicompass-sdk`  | the data model, shared by host and guest | `cargo add sicompass-sdk`      |
+| `sicompass-pdk`  | writing a plugin                        | `cargo add sicompass-pdk`      |
+
+`sicompass-sdk` builds two ways. With default features it is the full host-side
+crate. With `default-features = false` it is the portable half — FFON, tags,
+timeline records, dashboard types — and compiles for `wasm32-unknown-unknown`.
+`sicompass-pdk` depends on it that way, so a plugin needs only the one crate.
 
 ## What's in here
 
@@ -29,64 +45,97 @@ wire-protocol surface is stabilized.
 - Timeline / undo-redo entries
 - Tag parsing, dashboard primitives, localization (Fluent)
 - Platform helpers (trash, XDG / registry config locations)
-- Plugin loader: `#[repr(C)]` ABI for dynamically loaded `.so` / `.dll` / `.dylib`
-  plugins
+- `wit/sicompass-plugin.wit`: the host↔guest contract, also exposed as
+  `sicompass_sdk::WIT_SOURCE`
+- `sicompass-pdk`: guest bindings, an ergonomic `Plugin` trait, and
+  `export_plugin!`
 
 ## Writing a plugin
 
-### Rust
-
 ```toml
+[lib]
+crate-type = ["cdylib"]
+
 [dependencies]
-sicompass-sdk = "0.1"
+sicompass-pdk = "0.1"
 ```
 
 ```rust
-use sicompass_sdk::Provider;
+use sicompass_pdk::{export_plugin, Descriptor, FfonElement, Plugin};
 
-pub struct MyProvider;
-impl Provider for MyProvider { /* ... */ }
+struct Hello;
+
+impl Plugin for Hello {
+    fn new() -> Self { Hello }
+
+    fn describe(&self) -> Descriptor {
+        Descriptor { name: "hello".into(), display_name: "hello".into(), ..Default::default() }
+    }
+
+    fn fetch(&mut self) -> Vec<FfonElement> {
+        vec![FfonElement::new_str("hello from wasm")]
+    }
+}
+
+export_plugin!(Hello);
 ```
 
-### C
+Build, then wrap the module as a component:
 
-Get `sicompass_sdk.h` either from the published crate (it lives at the crate
-root, e.g. `~/.cargo/registry/src/.../sicompass-sdk-X.Y.Z/sicompass_sdk.h`) or
-from the [Releases page](https://github.com/friendlyflow/sicompass-plugin-sdk/releases).
-Include it and export `sicompass_plugin_init`:
+```sh
+cargo build --release --target wasm32-unknown-unknown
+wasm-tools component new \
+    target/wasm32-unknown-unknown/release/my_plugin.wasm -o plugin.wasm
+```
 
-```c
-#include <sicompass_sdk.h>
+The target is `wasm32-unknown-unknown`, not a `wasip2` one. wasip2's standard
+library declares `wasi:*` imports that the host links none of, and tolerating
+them would reduce the import list from a capability set to a hint. No WASI means
+no adapter is needed either.
 
-const ProviderOpsC *sicompass_plugin_init(void) {
-    static const ProviderOpsC ops = { /* ... */ };
-    return &ops;
+Install it where Sicompass scans, with a manifest beside it:
+
+```
+~/.config/sicompass/plugins/hello/
+    plugin.json
+    plugin.wasm
+```
+
+```json
+{
+  "name": "hello",
+  "displayName": "hello",
+  "type": "wasm",
+  "entry": "plugin.wasm",
+  "version": "0.1.0",
+  "allowedHosts": []
 }
 ```
 
-Compile as a shared library and place it where Sicompass scans for plugins:
+`allowedHosts` is a capability declaration, not a hint: it is what the user sees
+before enabling your plugin, and leaving it empty means the network interface is
+never linked into your guest.
 
-```sh
-cc -shared -fPIC -I. my_plugin.c -o my_plugin.so
-```
+Then enable it under Settings → "Available programs:". Note that plugins are
+discovered at startup, so a freshly installed one needs a restart.
 
-(`.so` on Linux, `.dylib` on macOS, `.dll` on Windows.)
+`examples/hello-plugin` is a working plugin covering navigation, commands,
+undo/redo and an interactive dashboard. `examples/net-plugin` shows the network
+capability. `./scripts/verify-guest.sh` builds the example and audits what it is
+actually allowed to do — useful on your own plugin too.
+
+### Other languages
+
+Rust is the best-supported guest. C/C++ and TinyGo work through their own
+component tooling. JavaScript and TypeScript are possible in principle via
+ComponentizeJS, but it embeds a JavaScript engine — megabytes per plugin, slow
+under the interpreter the App Store build uses, and it needs WASI, which is
+exactly what this design excludes. Treat it as unsupported for now.
 
 ## Releasing
 
-Before tagging, regenerate the header and commit it if it changed:
-
-```sh
-cbindgen --config cbindgen.toml --crate sicompass-sdk --output sicompass_sdk.h
-```
-
-Tags of the form `vX.Y.Z` trigger the release workflow:
-
-- Verifies the committed `sicompass_sdk.h` is up to date (the release fails if it
-  is stale), then publishes the `sicompass-sdk` crate to crates.io with the header
-  bundled in
-- Also generates `sicompass_sdk.h` via `cbindgen` and uploads it as a GitHub
-  release asset
+Tags of the form `vX.Y.Z` trigger the release workflow, which publishes the
+`sicompass-sdk` crate to crates.io.
 
 ## License
 

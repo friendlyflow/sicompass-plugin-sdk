@@ -8,6 +8,12 @@ on:
 permissions:
   contents: write
 
+# The cbindgen jobs that used to live here generated and attached a C header for
+# `#[repr(C)]` plugins loaded with dlopen. That plugin type is gone — Apple forbids
+# executing downloaded native code, and an in-process plugin could ignore every
+# manifest policy — so there is no C ABI left to publish. Third-party plugins are
+# WASM components; the contract is wit/sicompass-plugin.wit, which ships inside the
+# crate and is checked by tests/wit_contract.rs.
 jobs:
   publish-crate:
     name: Publish to crates.io
@@ -15,30 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install cbindgen
-        run: cargo install cbindgen --locked
-      - name: Verify committed header is up to date
+      - name: Verify the WIT contract holds
+        run: cargo test --test wit_contract
+      - name: Verify the guest half still builds for wasm
         run: |
-          cbindgen --config cbindgen.toml --crate sicompass-sdk --output sicompass_sdk.h
-          git diff --exit-code sicompass_sdk.h \
-            || (echo "::error::sicompass_sdk.h is stale. Regenerate with cbindgen and commit it." && exit 1)
+          rustup target add wasm32-unknown-unknown
+          cargo check --no-default-features --target wasm32-unknown-unknown
       - name: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish
-
-  release-c-header:
-    name: Generate C header and attach to release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install cbindgen
-        run: cargo install cbindgen --locked
-      - name: Generate sicompass_sdk.h
-        run: cbindgen --config cbindgen.toml --crate sicompass-sdk --output sicompass_sdk.h
-      - name: Upload header to release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: sicompass_sdk.h
-          fail_on_unmatched_files: true
