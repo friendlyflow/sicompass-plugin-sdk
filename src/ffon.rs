@@ -27,7 +27,10 @@ impl FfonElement {
     }
 
     pub fn new_obj(key: impl Into<String>) -> Self {
-        FfonElement::Obj(FfonObject { key: key.into(), children: Vec::new() })
+        FfonElement::Obj(FfonObject {
+            key: key.into(),
+            children: Vec::new(),
+        })
     }
 
     pub fn is_str(&self) -> bool {
@@ -122,7 +125,10 @@ impl<'de> Deserialize<'de> for FfonElement {
                 while let Some(child) = seq.next_element::<FfonElement>()? {
                     children.push(child);
                 }
-                Ok(FfonElement::Obj(FfonObject { key: "array".to_owned(), children }))
+                Ok(FfonElement::Obj(FfonObject {
+                    key: "array".to_owned(),
+                    children,
+                }))
             }
         }
 
@@ -143,7 +149,10 @@ pub struct FfonObject {
 
 impl FfonObject {
     pub fn new(key: impl Into<String>) -> Self {
-        FfonObject { key: key.into(), children: Vec::new() }
+        FfonObject {
+            key: key.into(),
+            children: Vec::new(),
+        }
     }
 
     pub fn push(&mut self, elem: FfonElement) {
@@ -156,12 +165,17 @@ impl FfonObject {
     }
 
     pub fn remove(&mut self, index: usize) -> Option<FfonElement> {
-        if index < self.children.len() { Some(self.children.remove(index)) } else { None }
+        if index < self.children.len() {
+            Some(self.children.remove(index))
+        } else {
+            None
+        }
     }
 
     fn deserialize_map<'de, M: MapAccess<'de>>(mut map: M) -> Result<Self, M::Error> {
-        let key: String =
-            map.next_key()?.ok_or_else(|| serde::de::Error::custom("empty FFON object"))?;
+        let key: String = map
+            .next_key()?
+            .ok_or_else(|| serde::de::Error::custom("empty FFON object"))?;
         let children: Vec<FfonElement> = map.next_value()?;
         Ok(FfonObject { key, children })
     }
@@ -227,7 +241,11 @@ impl IdArray {
     }
 
     pub fn to_display_string(&self) -> String {
-        self.0.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+        self.0
+            .iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
     }
 
     /// Replace the last index in the path (used when moving the selection up/down).
@@ -257,8 +275,7 @@ impl IdArray {
 /// Deserialize a JSON file containing a top-level array of FFON elements.
 pub fn load_json_file(path: &Path) -> io::Result<Vec<FfonElement>> {
     let data = std::fs::read_to_string(path)?;
-    serde_json::from_str(&data)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    serde_json::from_str(&data).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// Serialize a list of FFON elements to a JSON file (pretty-printed).
@@ -404,8 +421,10 @@ pub fn deserialize_binary(data: &[u8]) -> Vec<FfonElement> {
     let mut entries: Vec<Entry> = Vec::new();
     let mut pos = 0;
     while pos + 8 <= data.len() {
-        let layer = u32::from_le_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]);
-        let content_len = u32::from_le_bytes([data[pos+4], data[pos+5], data[pos+6], data[pos+7]]) as usize;
+        let layer = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+        let content_len =
+            u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]])
+                as usize;
         pos += 8;
         if pos + content_len > data.len() {
             break;
@@ -413,7 +432,11 @@ pub fn deserialize_binary(data: &[u8]) -> Vec<FfonElement> {
         let content = data[pos..pos + content_len].to_vec();
         pos += content_len;
         let is_key = content.last() == Some(&b':');
-        entries.push(Entry { layer, content, is_key });
+        entries.push(Entry {
+            layer,
+            content,
+            is_key,
+        });
     }
 
     // Second pass: rebuild tree using a depth stack
@@ -439,14 +462,16 @@ pub fn deserialize_binary(data: &[u8]) -> Vec<FfonElement> {
             let s = std::str::from_utf8(&e.content).unwrap_or("").to_owned();
             FfonElement::Str(s)
         };
-        nodes.push(Node { layer: e.layer, elem });
+        nodes.push(Node {
+            layer: e.layer,
+            elem,
+        });
     }
 
     // Build tree: for each node, find its parent (last preceding node with layer == this.layer - 1)
     // We process in reverse and use a stack.
     // We need ownership over all elements. Collect them first, then parent them.
-    let mut elems: Vec<(u32, FfonElement)> =
-        nodes.into_iter().map(|n| (n.layer, n.elem)).collect();
+    let mut elems: Vec<(u32, FfonElement)> = nodes.into_iter().map(|n| (n.layer, n.elem)).collect();
 
     // Process from the end so we can move children into parents.
     // Walk backward: each element at layer L is a child of the nearest preceding element at layer L-1.
@@ -497,15 +522,19 @@ fn deserialize_binary_inner(data: &[u8], result: &mut Vec<FfonElement>) {
     let mut entries: Vec<(u32, bool, String)> = Vec::new(); // (layer, is_key, content)
     let mut pos = 0;
     while pos + 8 <= data.len() {
-        let layer = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
-        let content_len = u32::from_le_bytes(data[pos+4..pos+8].try_into().unwrap()) as usize;
+        let layer = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+        let content_len = u32::from_le_bytes(data[pos + 4..pos + 8].try_into().unwrap()) as usize;
         pos += 8;
-        if pos + content_len > data.len() { break; }
+        if pos + content_len > data.len() {
+            break;
+        }
         let raw = &data[pos..pos + content_len];
         pos += content_len;
         let is_key = raw.last() == Some(&b':');
         let content = if is_key {
-            std::str::from_utf8(&raw[..raw.len()-1]).unwrap_or("").to_owned()
+            std::str::from_utf8(&raw[..raw.len() - 1])
+                .unwrap_or("")
+                .to_owned()
         } else {
             std::str::from_utf8(raw).unwrap_or("").to_owned()
         };
@@ -626,20 +655,28 @@ pub fn get_ffon_max_id(ffon: &[FfonElement], id: &IdArray) -> usize {
 // ---------------------------------------------------------------------------
 
 /// Tags we skip entirely (including all their children).
-const HTML_SKIP_TAGS: &[&str] = &[
-    "script", "style", "noscript", "svg", "head",
-];
+const HTML_SKIP_TAGS: &[&str] = &["script", "style", "noscript", "svg", "head"];
 
 /// Block container tags — recurse into children without emitting a wrapper element.
 const HTML_CONTAINER_TAGS: &[&str] = &[
-    "div", "section", "article", "main", "header", "aside", "figure",
-    "blockquote", "details", "summary",
+    "div",
+    "section",
+    "article",
+    "main",
+    "header",
+    "aside",
+    "figure",
+    "blockquote",
+    "details",
+    "summary",
     // Landmark elements (main, aside above; nav, footer below) are wrapped in a
     // named Obj by the landmark arm in `process_node`; they stay listed here so
     // the generic-tag fallback still treats them as block-level content.
-    "nav", "footer",
+    "nav",
+    "footer",
     // Form structure: these are transparent containers so their children are processed normally
-    "label", "fieldset",
+    "label",
+    "fieldset",
 ];
 
 /// Tags that have explicit match arms in `process_node` and produce block-level output.
@@ -693,20 +730,29 @@ fn html_normalize_whitespace(s: &str) -> String {
     let mut prev_ws = true;
     for c in s.chars() {
         if c.is_whitespace() {
-            if !prev_ws { out.push(' '); prev_ws = true; }
+            if !prev_ws {
+                out.push(' ');
+                prev_ws = true;
+            }
         } else {
             out.push(c);
             prev_ws = false;
         }
     }
-    if out.ends_with(' ') { out.pop(); }
+    if out.ends_with(' ') {
+        out.pop();
+    }
     out
 }
 
 fn html_heading_level(tag: &str) -> Option<u8> {
     match tag {
-        "h1" => Some(1), "h2" => Some(2), "h3" => Some(3),
-        "h4" => Some(4), "h5" => Some(5), "h6" => Some(6),
+        "h1" => Some(1),
+        "h2" => Some(2),
+        "h3" => Some(3),
+        "h4" => Some(4),
+        "h5" => Some(5),
+        "h6" => Some(6),
         _ => None,
     }
 }
@@ -731,10 +777,10 @@ struct HtmlParseCtx<'a> {
     stack: Vec<(u8, FfonElement)>,
     pending_id: Option<String>,
     // Form tracking
-    form_count: usize,        // total forms encountered in the document (never reset)
-    current_form_idx: usize,  // 1-based index of the form being parsed (0 = not in a form)
-    form_input_count: usize,  // inputs seen in the current form (for fallback labels)
-    form_label_counts: std::collections::HashMap<String, usize>,    // label → times seen (per scope), to disambiguate duplicates
+    form_count: usize, // total forms encountered in the document (never reset)
+    current_form_idx: usize, // 1-based index of the form being parsed (0 = not in a form)
+    form_input_count: usize, // inputs seen in the current form (for fallback labels)
+    form_label_counts: std::collections::HashMap<String, usize>, // label → times seen (per scope), to disambiguate duplicates
     form_selector_counts: std::collections::HashMap<String, usize>, // selector → times seen (per scope), for match_index
     form_map: Vec<(String, FormNode)>, // accumulated path → node entries
 }
@@ -760,7 +806,11 @@ impl<'a> HtmlParseCtx<'a> {
     /// suffix so their form-map keys (and the visible labels) stay unique.
     fn disambiguate_label(&mut self, base: String) -> String {
         let count = self.form_label_counts.entry(base.clone()).or_insert(0);
-        let label = if *count == 0 { base.clone() } else { format!("{base} ({})", *count + 1) };
+        let label = if *count == 0 {
+            base.clone()
+        } else {
+            format!("{base} ({})", *count + 1)
+        };
         *count += 1;
         label
     }
@@ -768,7 +818,10 @@ impl<'a> HtmlParseCtx<'a> {
     /// Next 0-based position among controls sharing `selector` in this scope, so
     /// duplicates resolve via `querySelectorAll(sel)[match_index]`.
     fn next_match_index(&mut self, selector: &str) -> usize {
-        let count = self.form_selector_counts.entry(selector.to_owned()).or_insert(0);
+        let count = self
+            .form_selector_counts
+            .entry(selector.to_owned())
+            .or_insert(0);
         let idx = *count;
         *count += 1;
         idx
@@ -819,13 +872,17 @@ impl<'a> HtmlParseCtx<'a> {
 
     fn process_node(&mut self, node: scraper::ElementRef) {
         let tag = node.value().name();
-        if HTML_SKIP_TAGS.contains(&tag) { return; }
+        if HTML_SKIP_TAGS.contains(&tag) {
+            return;
+        }
 
         let prev_id = if let Some(id) = node.value().attr("id").filter(|s| !s.is_empty()) {
             let prev = self.pending_id.take();
             self.pending_id = Some(id.to_owned());
             prev
-        } else { None };
+        } else {
+            None
+        };
         let had_own_id = node.value().attr("id").filter(|s| !s.is_empty()).is_some();
 
         // Form controls never use the pending_id prefix — clear it so the id tag
@@ -836,17 +893,30 @@ impl<'a> HtmlParseCtx<'a> {
 
         if let Some(level) = html_heading_level(tag) {
             let text = html_collect_text(node, self.base_url);
-            if text.is_empty() { if had_own_id { self.pending_id = prev_id; } return; }
+            if text.is_empty() {
+                if had_own_id {
+                    self.pending_id = prev_id;
+                }
+                return;
+            }
             self.pop_until_level(level);
-            let id_prefix = self.pending_id.take()
-                .map(|i| crate::tags::format_id(&i)).unwrap_or_default();
-            self.stack.push((level, FfonElement::new_obj(format!("{id_prefix}{text}"))));
-            if had_own_id { self.pending_id = prev_id; }
+            let id_prefix = self
+                .pending_id
+                .take()
+                .map(|i| crate::tags::format_id(&i))
+                .unwrap_or_default();
+            self.stack
+                .push((level, FfonElement::new_obj(format!("{id_prefix}{text}"))));
+            if had_own_id {
+                self.pending_id = prev_id;
+            }
             return;
         }
 
         match tag {
-            "br" => { self.add_to_current(FfonElement::new_str(String::new())); }
+            "br" => {
+                self.add_to_current(FfonElement::new_str(String::new()));
+            }
             "p" => {
                 for elem in self.process_mixed_into(node) {
                     self.add_to_current(elem);
@@ -854,8 +924,11 @@ impl<'a> HtmlParseCtx<'a> {
             }
             "ul" | "ol" => {
                 let label = if tag == "ol" { "ordered list" } else { "list" };
-                let id_prefix = self.pending_id.take()
-                    .map(|i| crate::tags::format_id(&i)).unwrap_or_default();
+                let id_prefix = self
+                    .pending_id
+                    .take()
+                    .map(|i| crate::tags::format_id(&i))
+                    .unwrap_or_default();
                 let mut list_obj = FfonElement::new_obj(format!("{id_prefix}{label}"));
                 let li_sel = scraper::Selector::parse("li").unwrap();
                 for (i, li) in node.select(&li_sel).enumerate() {
@@ -865,10 +938,11 @@ impl<'a> HtmlParseCtx<'a> {
                         let prefixed = match elem {
                             FfonElement::Str(ref s) if !first_str_seen => {
                                 first_str_seen = true;
-                                FfonElement::new_str(
-                                    if tag == "ol" { format!("{}. {}", i + 1, s) }
-                                    else { format!("- {}", s) }
-                                )
+                                FfonElement::new_str(if tag == "ol" {
+                                    format!("{}. {}", i + 1, s)
+                                } else {
+                                    format!("- {}", s)
+                                })
                             }
                             other => other,
                         };
@@ -882,12 +956,16 @@ impl<'a> HtmlParseCtx<'a> {
             "table" => {
                 let mut rows: Vec<FfonElement> = Vec::new();
                 html_collect_table_rows(node, &mut rows);
-                for row in rows { self.add_to_current(row); }
+                for row in rows {
+                    self.add_to_current(row);
+                }
             }
             "pre" | "code" => {
                 let text = node.text().collect::<String>();
                 let trimmed = text.trim().to_owned();
-                if !trimmed.is_empty() { self.add_to_current(FfonElement::new_str(trimmed)); }
+                if !trimmed.is_empty() {
+                    self.add_to_current(FfonElement::new_str(trimmed));
+                }
             }
             "img" => {
                 let alt = node.value().attr("alt").unwrap_or("");
@@ -896,38 +974,53 @@ impl<'a> HtmlParseCtx<'a> {
                 }
             }
             "a" => {
-                let href = html_resolve_href(node.value().attr("href").unwrap_or(""), self.base_url);
+                let href =
+                    html_resolve_href(node.value().attr("href").unwrap_or(""), self.base_url);
                 let text = html_collect_text(node, self.base_url);
                 if !text.is_empty() && !href.is_empty() {
-                    self.add_to_current(FfonElement::new_obj(format!("{text} <link>{href}</link>")));
+                    self.add_to_current(FfonElement::new_obj(format!(
+                        "{text} <link>{href}</link>"
+                    )));
                 } else if !text.is_empty() {
                     self.add_to_current(FfonElement::new_str(text));
                 }
             }
             "dl" => {
-                let id_prefix = self.pending_id.take()
-                    .map(|i| crate::tags::format_id(&i)).unwrap_or_default();
+                let id_prefix = self
+                    .pending_id
+                    .take()
+                    .map(|i| crate::tags::format_id(&i))
+                    .unwrap_or_default();
                 let mut dl_obj = FfonElement::new_obj(format!("{id_prefix}definition list"));
                 let mut current_dt: Option<FfonElement> = None;
                 for child in node.children().filter_map(scraper::ElementRef::wrap) {
                     let text = html_collect_text(child, self.base_url);
-                    if text.is_empty() { continue; }
+                    if text.is_empty() {
+                        continue;
+                    }
                     match child.value().name() {
                         "dt" => {
-                            if let Some(dt) = current_dt.take() { dl_obj.as_obj_mut().unwrap().push(dt); }
+                            if let Some(dt) = current_dt.take() {
+                                dl_obj.as_obj_mut().unwrap().push(dt);
+                            }
                             current_dt = Some(FfonElement::new_obj(text));
                         }
                         "dd" => {
                             if let Some(ref mut dt) = current_dt {
                                 dt.as_obj_mut().unwrap().push(FfonElement::new_str(text));
                             } else {
-                                dl_obj.as_obj_mut().unwrap().push(FfonElement::new_str(text));
+                                dl_obj
+                                    .as_obj_mut()
+                                    .unwrap()
+                                    .push(FfonElement::new_str(text));
                             }
                         }
                         _ => {}
                     }
                 }
-                if let Some(dt) = current_dt { dl_obj.as_obj_mut().unwrap().push(dt); }
+                if let Some(dt) = current_dt {
+                    dl_obj.as_obj_mut().unwrap().push(dt);
+                }
                 if dl_obj.as_obj().map_or(false, |o| !o.children.is_empty()) {
                     self.add_to_current(dl_obj);
                 }
@@ -936,9 +1029,13 @@ impl<'a> HtmlParseCtx<'a> {
             "form" => {
                 let form_idx = self.form_count + 1;
                 self.form_count += 1;
-                let id_prefix = self.pending_id.take()
-                    .map(|i| crate::tags::format_id(&i)).unwrap_or_default();
-                let form_children = self.with_isolated_form_scope(form_idx, |ctx| ctx.process_children(node));
+                let id_prefix = self
+                    .pending_id
+                    .take()
+                    .map(|i| crate::tags::format_id(&i))
+                    .unwrap_or_default();
+                let form_children =
+                    self.with_isolated_form_scope(form_idx, |ctx| ctx.process_children(node));
                 if !form_children.is_empty() {
                     let mut form_obj = FfonElement::new_obj(format!("{id_prefix}form_{form_idx}"));
                     for child in form_children {
@@ -946,31 +1043,41 @@ impl<'a> HtmlParseCtx<'a> {
                     }
                     self.add_to_current(form_obj);
                 }
-                if had_own_id { self.pending_id = prev_id; }
+                if had_own_id {
+                    self.pending_id = prev_id;
+                }
                 return;
             }
 
             // ---- Input fields --------------------------------------------------
             "input" => {
                 // Collect all attributes eagerly to avoid borrow conflicts later.
-                let input_type = node.value().attr("type").unwrap_or("text").to_ascii_lowercase();
-                let name      = node.value().attr("name").unwrap_or("").to_owned();
-                let id_attr   = node.value().attr("id").unwrap_or("").to_owned();
-                let ph        = node.value().attr("placeholder").unwrap_or("").to_owned();
-                let al        = node.value().attr("aria-label").unwrap_or("").to_owned();
-                let value     = node.value().attr("value").unwrap_or("").to_owned();
+                let input_type = node
+                    .value()
+                    .attr("type")
+                    .unwrap_or("text")
+                    .to_ascii_lowercase();
+                let name = node.value().attr("name").unwrap_or("").to_owned();
+                let id_attr = node.value().attr("id").unwrap_or("").to_owned();
+                let ph = node.value().attr("placeholder").unwrap_or("").to_owned();
+                let al = node.value().attr("aria-label").unwrap_or("").to_owned();
+                let value = node.value().attr("value").unwrap_or("").to_owned();
                 let is_checked = node.value().attr("checked").is_some();
-                let form_n    = self.current_form_idx;
+                let form_n = self.current_form_idx;
 
                 match input_type.as_str() {
                     "hidden" | "file" | "reset" | "image" => {
                         // Not user-visible; skip.
                     }
                     "checkbox" => {
-                        let base = html_input_label(&ph, &al, &name, &id_attr,
-                                                    &mut self.form_input_count);
+                        let base =
+                            html_input_label(&ph, &al, &name, &id_attr, &mut self.form_input_count);
                         let label = self.disambiguate_label(base);
-                        let tag = if is_checked { "<checkbox checked>" } else { "<checkbox>" };
+                        let tag = if is_checked {
+                            "<checkbox checked>"
+                        } else {
+                            "<checkbox>"
+                        };
                         self.add_to_current(FfonElement::new_str(format!("{tag}{label}")));
                         if form_n > 0 {
                             let css = html_input_selector(&name, &id_attr);
@@ -987,8 +1094,8 @@ impl<'a> HtmlParseCtx<'a> {
                         }
                     }
                     "radio" => {
-                        let base = html_input_label(&ph, &al, &name, &id_attr,
-                                                    &mut self.form_input_count);
+                        let base =
+                            html_input_label(&ph, &al, &name, &id_attr, &mut self.form_input_count);
                         let label = self.disambiguate_label(base);
                         let indicator = if is_checked { "(x) " } else { "( ) " };
                         self.add_to_current(FfonElement::new_str(format!("{indicator}{label}")));
@@ -1010,17 +1117,21 @@ impl<'a> HtmlParseCtx<'a> {
                         }
                     }
                     "submit" | "button" => {
-                        let display = if !value.is_empty() { value.clone() } else { "Submit".to_owned() };
+                        let display = if !value.is_empty() {
+                            value.clone()
+                        } else {
+                            "Submit".to_owned()
+                        };
                         self.emit_submit_button(form_n, &name, &id_attr, &display);
                     }
                     _ => {
                         // text, email, password, url, search, tel, number, date, …
-                        let base = html_input_label(&ph, &al, &name, &id_attr,
-                                                    &mut self.form_input_count);
+                        let base =
+                            html_input_label(&ph, &al, &name, &id_attr, &mut self.form_input_count);
                         let label = self.disambiguate_label(base);
-                        self.add_to_current(FfonElement::new_str(
-                            format!("{label}: <input>{value}</input>")
-                        ));
+                        self.add_to_current(FfonElement::new_str(format!(
+                            "{label}: <input>{value}</input>"
+                        )));
                         // Register the field for fill/submit. Inside a form
                         // (form_n > 0) always; outside any form only when it has
                         // an id or name to target globally, so JS-driven search
@@ -1041,22 +1152,25 @@ impl<'a> HtmlParseCtx<'a> {
                         }
                     }
                 }
-                if had_own_id { self.pending_id = prev_id; }
+                if had_own_id {
+                    self.pending_id = prev_id;
+                }
                 return;
             }
 
             // ---- Textarea ------------------------------------------------------
             "textarea" => {
-                let name    = node.value().attr("name").unwrap_or("").to_owned();
+                let name = node.value().attr("name").unwrap_or("").to_owned();
                 let id_attr = node.value().attr("id").unwrap_or("").to_owned();
-                let ph      = node.value().attr("placeholder").unwrap_or("").to_owned();
-                let al      = node.value().attr("aria-label").unwrap_or("").to_owned();
+                let ph = node.value().attr("placeholder").unwrap_or("").to_owned();
+                let al = node.value().attr("aria-label").unwrap_or("").to_owned();
                 let content = node.text().collect::<String>().trim().to_owned();
-                let form_n  = self.current_form_idx;
-                let base    = html_input_label(&ph, &al, &name, &id_attr,
-                                               &mut self.form_input_count);
-                let label   = self.disambiguate_label(base);
-                self.add_to_current(FfonElement::new_str(format!("{label}: <input>{content}</input>")));
+                let form_n = self.current_form_idx;
+                let base = html_input_label(&ph, &al, &name, &id_attr, &mut self.form_input_count);
+                let label = self.disambiguate_label(base);
+                self.add_to_current(FfonElement::new_str(format!(
+                    "{label}: <input>{content}</input>"
+                )));
                 if form_n > 0 {
                     let css = html_input_selector(&name, &id_attr);
                     let match_index = self.next_match_index(&css);
@@ -1070,28 +1184,35 @@ impl<'a> HtmlParseCtx<'a> {
                         },
                     ));
                 }
-                if had_own_id { self.pending_id = prev_id; }
+                if had_own_id {
+                    self.pending_id = prev_id;
+                }
                 return;
             }
 
             // ---- Select (dropdown) ---------------------------------------------
             "select" => {
-                let name    = node.value().attr("name").unwrap_or("").to_owned();
+                let name = node.value().attr("name").unwrap_or("").to_owned();
                 let id_attr = node.value().attr("id").unwrap_or("").to_owned();
-                let al      = node.value().attr("aria-label").unwrap_or("").to_owned();
-                let form_n  = self.current_form_idx;
-                let base    = html_input_label("", &al, &name, &id_attr,
-                                               &mut self.form_input_count);
-                let label   = self.disambiguate_label(base);
+                let al = node.value().attr("aria-label").unwrap_or("").to_owned();
+                let form_n = self.current_form_idx;
+                let base = html_input_label("", &al, &name, &id_attr, &mut self.form_input_count);
+                let label = self.disambiguate_label(base);
 
                 let opt_sel = scraper::Selector::parse("option").unwrap();
                 let mut radio_obj = FfonElement::new_obj(format!("<radio>{label}"));
                 for opt in node.select(&opt_sel) {
-                    let val  = opt.value().attr("value").unwrap_or("").to_owned();
+                    let val = opt.value().attr("value").unwrap_or("").to_owned();
                     let text = opt.text().collect::<String>().trim().to_owned();
                     let selected = opt.value().attr("selected").is_some();
-                    let display  = if !text.is_empty() { text.clone() } else { val.clone() };
-                    if display.is_empty() { continue; }
+                    let display = if !text.is_empty() {
+                        text.clone()
+                    } else {
+                        val.clone()
+                    };
+                    if display.is_empty() {
+                        continue;
+                    }
                     let entry = if selected {
                         FfonElement::new_str(format!("<checked>{display}</checked>"))
                     } else {
@@ -1115,38 +1236,57 @@ impl<'a> HtmlParseCtx<'a> {
                 if radio_obj.as_obj().map_or(false, |o| !o.children.is_empty()) {
                     self.add_to_current(radio_obj);
                 }
-                if had_own_id { self.pending_id = prev_id; }
+                if had_own_id {
+                    self.pending_id = prev_id;
+                }
                 return;
             }
 
             // ---- Standalone button (not <input type=button>) -------------------
             "button" => {
-                let btn_type = node.value().attr("type").unwrap_or("submit").to_ascii_lowercase();
+                let btn_type = node
+                    .value()
+                    .attr("type")
+                    .unwrap_or("submit")
+                    .to_ascii_lowercase();
                 if matches!(btn_type.as_str(), "submit" | "button") {
-                    let name    = node.value().attr("name").unwrap_or("").to_owned();
+                    let name = node.value().attr("name").unwrap_or("").to_owned();
                     let id_attr = node.value().attr("id").unwrap_or("").to_owned();
                     let display = html_collect_text(node, self.base_url);
-                    let display = if !display.is_empty() { display } else { "Submit".to_owned() };
-                    let form_n  = self.current_form_idx;
+                    let display = if !display.is_empty() {
+                        display
+                    } else {
+                        "Submit".to_owned()
+                    };
+                    let form_n = self.current_form_idx;
                     self.emit_submit_button(form_n, &name, &id_attr, &display);
                 }
-                if had_own_id { self.pending_id = prev_id; }
+                if had_own_id {
+                    self.pending_id = prev_id;
+                }
                 return;
             }
 
             t if html_landmark_name(t).is_some() => {
                 let name = html_landmark_name(t).unwrap();
-                let id_prefix = self.pending_id.take()
-                    .map(|i| crate::tags::format_id(&i)).unwrap_or_default();
+                let id_prefix = self
+                    .pending_id
+                    .take()
+                    .map(|i| crate::tags::format_id(&i))
+                    .unwrap_or_default();
                 let children = self.collect_landmark_children(node);
                 if !children.is_empty() {
                     let mut obj = FfonElement::new_obj(format!("{id_prefix}{name}"));
-                    for c in children { obj.as_obj_mut().unwrap().push(c); }
+                    for c in children {
+                        obj.as_obj_mut().unwrap().push(c);
+                    }
                     self.add_to_current(obj);
                 }
             }
 
-            t if HTML_CONTAINER_TAGS.contains(&t) => { self.process_children(node); }
+            t if HTML_CONTAINER_TAGS.contains(&t) => {
+                self.process_children(node);
+            }
             _ => {
                 // Look for a block-level element anywhere in the subtree, not
                 // just among the direct children. Sites commonly wrap their real
@@ -1154,20 +1294,28 @@ impl<'a> HtmlParseCtx<'a> {
                 // (e.g. <al-widget>, <micro-copy>). A shallow one-level check
                 // finds only more custom wrappers, misclassifies the whole
                 // subtree as inline, and flattens it into a single string.
-                let has_block = node.descendants().filter_map(scraper::ElementRef::wrap).any(|c| {
-                    let t = c.value().name();
-                    html_heading_level(t).is_some()
-                        || HTML_BLOCK_HANDLED_TAGS.contains(&t)
-                        || HTML_CONTAINER_TAGS.contains(&t)
-                });
-                if has_block { self.process_children(node); }
-                else {
+                let has_block = node
+                    .descendants()
+                    .filter_map(scraper::ElementRef::wrap)
+                    .any(|c| {
+                        let t = c.value().name();
+                        html_heading_level(t).is_some()
+                            || HTML_BLOCK_HANDLED_TAGS.contains(&t)
+                            || HTML_CONTAINER_TAGS.contains(&t)
+                    });
+                if has_block {
+                    self.process_children(node);
+                } else {
                     let text = html_collect_text(node, self.base_url);
-                    if !text.is_empty() { self.add_to_current(FfonElement::new_str(text)); }
+                    if !text.is_empty() {
+                        self.add_to_current(FfonElement::new_str(text));
+                    }
                 }
             }
         }
-        if had_own_id { self.pending_id = prev_id; }
+        if had_own_id {
+            self.pending_id = prev_id;
+        }
     }
 
     /// Walk `node`'s children (both text and element), emitting inline content
@@ -1180,9 +1328,13 @@ impl<'a> HtmlParseCtx<'a> {
             match child.value() {
                 Node::Text(t) => text_buf.push_str(t),
                 Node::Element(e) => {
-                    let Some(elem_ref) = scraper::ElementRef::wrap(child) else { continue; };
+                    let Some(elem_ref) = scraper::ElementRef::wrap(child) else {
+                        continue;
+                    };
                     let name = e.name();
-                    if HTML_SKIP_TAGS.contains(&name) { continue; }
+                    if HTML_SKIP_TAGS.contains(&name) {
+                        continue;
+                    }
                     let is_block = html_heading_level(name).is_some()
                         || HTML_BLOCK_HANDLED_TAGS.contains(&name)
                         || HTML_CONTAINER_TAGS.contains(&name);
@@ -1204,9 +1356,9 @@ impl<'a> HtmlParseCtx<'a> {
                         let href = html_resolve_href(e.attr("href").unwrap_or(""), self.base_url);
                         let link_text = html_collect_text(elem_ref, self.base_url);
                         if !link_text.is_empty() && !href.is_empty() {
-                            self.add_to_current(FfonElement::new_obj(
-                                format!("{link_text} <link>{href}</link>"),
-                            ));
+                            self.add_to_current(FfonElement::new_obj(format!(
+                                "{link_text} <link>{href}</link>"
+                            )));
                         } else if !link_text.is_empty() {
                             text_buf.push_str(&link_text);
                         }
@@ -1218,16 +1370,20 @@ impl<'a> HtmlParseCtx<'a> {
             }
         }
         let norm = html_normalize_whitespace(&text_buf);
-        if !norm.is_empty() { self.add_to_current(FfonElement::new_str(norm)); }
+        if !norm.is_empty() {
+            self.add_to_current(FfonElement::new_str(norm));
+        }
     }
 
     /// Like `process_mixed_content` but returns the collected elements instead
     /// of adding them to `self.root`. Used by `<p>` and `<li>` processing.
     fn process_mixed_into(&mut self, node: scraper::ElementRef) -> Vec<FfonElement> {
-        let saved_root  = std::mem::take(&mut self.root);
+        let saved_root = std::mem::take(&mut self.root);
         let saved_stack = std::mem::take(&mut self.stack);
         self.process_mixed_content(node);
-        while let Some((_, entry)) = self.stack.pop() { self.root.push(entry); }
+        while let Some((_, entry)) = self.stack.pop() {
+            self.root.push(entry);
+        }
         let children = std::mem::replace(&mut self.root, saved_root);
         self.stack = saved_stack;
         children
@@ -1238,21 +1394,23 @@ impl<'a> HtmlParseCtx<'a> {
         form_idx: usize,
         f: impl FnOnce(&mut Self),
     ) -> Vec<FfonElement> {
-        let saved_root  = std::mem::take(&mut self.root);
+        let saved_root = std::mem::take(&mut self.root);
         let saved_stack = std::mem::take(&mut self.stack);
         let saved_input_count = std::mem::replace(&mut self.form_input_count, 0);
-        let saved_form_idx    = std::mem::replace(&mut self.current_form_idx, form_idx);
+        let saved_form_idx = std::mem::replace(&mut self.current_form_idx, form_idx);
         // Label/selector disambiguation is per-form: start fresh, restore after so
         // a form's counts don't leak into document-level (form_0) controls.
-        let saved_label_counts    = std::mem::take(&mut self.form_label_counts);
+        let saved_label_counts = std::mem::take(&mut self.form_label_counts);
         let saved_selector_counts = std::mem::take(&mut self.form_selector_counts);
         f(self);
-        while let Some((_, entry)) = self.stack.pop() { self.root.push(entry); }
+        while let Some((_, entry)) = self.stack.pop() {
+            self.root.push(entry);
+        }
         let form_children = std::mem::replace(&mut self.root, saved_root);
-        self.stack            = saved_stack;
+        self.stack = saved_stack;
         self.form_input_count = saved_input_count;
         self.current_form_idx = saved_form_idx;
-        self.form_label_counts    = saved_label_counts;
+        self.form_label_counts = saved_label_counts;
         self.form_selector_counts = saved_selector_counts;
         form_children
     }
@@ -1263,7 +1421,7 @@ impl<'a> HtmlParseCtx<'a> {
     /// (not reset) so a form nested inside a landmark still registers its CSS
     /// selectors in the global form map.
     fn collect_landmark_children(&mut self, node: scraper::ElementRef) -> Vec<FfonElement> {
-        let saved_root  = std::mem::take(&mut self.root);
+        let saved_root = std::mem::take(&mut self.root);
         let saved_stack = std::mem::take(&mut self.stack);
         self.process_children(node);
         // Flush the heading stack re-parenting each entry into the heading above
@@ -1284,7 +1442,9 @@ impl<'a> HtmlParseCtx<'a> {
     fn emit_submit_button(&mut self, form_n: usize, name: &str, id_attr: &str, display: &str) {
         let fn_name = format!("submit:form_{form_n}");
         let display = self.disambiguate_label(display.to_owned());
-        self.add_to_current(FfonElement::new_str(format!("<button>{fn_name}</button>{display}")));
+        self.add_to_current(FfonElement::new_str(format!(
+            "<button>{fn_name}</button>{display}"
+        )));
         if form_n > 0 {
             let css = html_submit_selector(name, id_attr);
             let match_index = self.next_match_index(&css);
@@ -1308,10 +1468,18 @@ impl<'a> HtmlParseCtx<'a> {
 /// Pick a human-readable label for a form control.
 /// Priority: placeholder → aria-label → name → id → generated fallback.
 fn html_input_label(ph: &str, al: &str, name: &str, id: &str, counter: &mut usize) -> String {
-    if !ph.is_empty()   { return ph.to_owned(); }
-    if !al.is_empty()   { return al.to_owned(); }
-    if !name.is_empty() { return name.to_owned(); }
-    if !id.is_empty()   { return id.to_owned(); }
+    if !ph.is_empty() {
+        return ph.to_owned();
+    }
+    if !al.is_empty() {
+        return al.to_owned();
+    }
+    if !name.is_empty() {
+        return name.to_owned();
+    }
+    if !id.is_empty() {
+        return id.to_owned();
+    }
     *counter += 1;
     format!("input_{}", *counter)
 }
@@ -1320,15 +1488,23 @@ fn html_input_label(ph: &str, al: &str, name: &str, id: &str, counter: &mut usiz
 /// Resolved by the caller against the owning form (or `document` for a control
 /// outside any form); an id is globally unique so it is used as-is.
 fn html_input_selector(name: &str, id: &str) -> String {
-    if !id.is_empty()   { return format!("#{id}"); }
-    if !name.is_empty() { return format!("[name=\"{name}\"]"); }
+    if !id.is_empty() {
+        return format!("#{id}");
+    }
+    if !name.is_empty() {
+        return format!("[name=\"{name}\"]");
+    }
     "input".to_owned()
 }
 
 /// Form-relative CSS selector for a submit button.
 pub fn html_submit_selector(name: &str, id: &str) -> String {
-    if !id.is_empty()   { return format!("#{id}"); }
-    if !name.is_empty() { return format!("[name=\"{name}\"]"); }
+    if !id.is_empty() {
+        return format!("#{id}");
+    }
+    if !name.is_empty() {
+        return format!("[name=\"{name}\"]");
+    }
     "[type=\"submit\"]".to_owned()
 }
 
@@ -1366,7 +1542,11 @@ pub fn html_to_ffon(html: &str, base_url: &str) -> Vec<FfonElement> {
 /// their content. `main content` / `footer` are deliberately excluded — they are
 /// near-always singletons and their names are already meaningful.
 const GENERIC_CONTAINER_KEYS: &[&str] = &[
-    "list", "ordered list", "navigation", "complementary", "definition list",
+    "list",
+    "ordered list",
+    "navigation",
+    "complementary",
+    "definition list",
 ];
 
 /// Split a leading `<id>…</id>` metadata prefix off a key, returning
@@ -1395,24 +1575,38 @@ fn generic_container_kind(key: &str) -> Option<&'static str> {
 /// describe the container) and for empties.
 fn nav_sample_label(text: &str) -> Option<String> {
     use crate::tags;
-    if tags::has_button(text) || tags::has_input(text) || tags::has_password(text)
-        || tags::has_checkbox(text) || tags::has_radio(text)
+    if tags::has_button(text)
+        || tags::has_input(text)
+        || tags::has_password(text)
+        || tags::has_checkbox(text)
+        || tags::has_radio(text)
     {
         return None;
     }
     let (_, mut rest) = split_id_prefix(text);
     // Keep the visible anchor text, dropping a trailing <link>url</link>.
-    if let Some(i) = rest.find("<link>") { rest = &rest[..i]; }
+    if let Some(i) = rest.find("<link>") {
+        rest = &rest[..i];
+    }
     let mut rest = rest.trim();
     // Strip list-item markers ("- ", "1. ").
-    if let Some(stripped) = rest.strip_prefix("- ") { rest = stripped.trim_start(); }
-    else if let Some((num, tail)) = rest.split_once(". ") {
-        if !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()) { rest = tail.trim_start(); }
+    if let Some(stripped) = rest.strip_prefix("- ") {
+        rest = stripped.trim_start();
+    } else if let Some((num, tail)) = rest.split_once(". ") {
+        if !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()) {
+            rest = tail.trim_start();
+        }
     }
-    if rest.is_empty() { return None; }
+    if rest.is_empty() {
+        return None;
+    }
     // Cap length so summaries stay tidy.
     let capped: String = rest.chars().take(40).collect();
-    Some(if capped.len() < rest.len() { format!("{}…", capped.trim_end()) } else { capped })
+    Some(if capped.len() < rest.len() {
+        format!("{}…", capped.trim_end())
+    } else {
+        capped
+    })
 }
 
 /// Collapse a chain of single-child wrapper Objs where at least one side is a
@@ -1427,10 +1621,18 @@ fn collapse_redundant_wrapper(o: &mut FfonObject) {
         // generic wrapper, and the inner must itself be a container (generic, or
         // holding its own children). Never collapse a wrapper into a lone leaf
         // such as a single link — that would destroy the container entirely.
-        if !(outer_generic || inner_generic) { break; }
-        if !inner_generic && inner.children.is_empty() { break; }
-        let FfonElement::Obj(child) = o.children.remove(0) else { unreachable!() };
-        if outer_generic && !inner_generic { o.key = child.key; }
+        if !(outer_generic || inner_generic) {
+            break;
+        }
+        if !inner_generic && inner.children.is_empty() {
+            break;
+        }
+        let FfonElement::Obj(child) = o.children.remove(0) else {
+            unreachable!()
+        };
+        if outer_generic && !inner_generic {
+            o.key = child.key;
+        }
         o.children = child.children;
     }
 }
@@ -1462,18 +1664,24 @@ fn rename_generic_containers(elems: &mut [FfonElement]) {
         let FfonElement::Obj(o) = e else { continue };
         rename_generic_containers(&mut o.children);
         if let Some(kind) = generic_container_kind(&o.key) {
-            let sample: Vec<String> = o.children.iter()
-                .filter_map(|c| nav_sample_label(match c {
-                    FfonElement::Str(s) => s,
-                    FfonElement::Obj(inner) => &inner.key,
-                }))
+            let sample: Vec<String> = o
+                .children
+                .iter()
+                .filter_map(|c| {
+                    nav_sample_label(match c {
+                        FfonElement::Str(s) => s,
+                        FfonElement::Obj(inner) => &inner.key,
+                    })
+                })
                 .take(3)
                 .collect();
             if !sample.is_empty() {
                 let (id_prefix, _) = split_id_prefix(&o.key);
                 let extra = o.children.len().saturating_sub(sample.len());
                 let mut name = format!("{id_prefix}{kind}: {}", sample.join(", "));
-                if extra > 0 { name.push_str(&format!(" +{extra}")); }
+                if extra > 0 {
+                    name.push_str(&format!(" +{extra}"));
+                }
                 o.key = name;
             }
         }
@@ -1500,7 +1708,11 @@ pub fn html_to_ffon_with_forms(html: &str, base_url: &str) -> (Vec<FfonElement>,
             ctx.finalize_with_forms()
         }
     };
-    let mut elems = if r.is_empty() { vec![FfonElement::new_str("(empty)")] } else { r };
+    let mut elems = if r.is_empty() {
+        vec![FfonElement::new_str("(empty)")]
+    } else {
+        r
+    };
     improve_navigability(&mut elems);
     let form_map: FormMap = map_entries.into_iter().collect();
     (elems, form_map)
@@ -1515,15 +1727,22 @@ fn html_collect_text(node: scraper::ElementRef, base_url: &str) -> String {
             Node::Element(e) => {
                 if let Some(elem_ref) = scraper::ElementRef::wrap(child) {
                     let name = e.name();
-                    if HTML_SKIP_TAGS.contains(&name) { continue; }
-                    if name == "br" { buf.push('\n'); }
-                    else if name == "a" {
+                    if HTML_SKIP_TAGS.contains(&name) {
+                        continue;
+                    }
+                    if name == "br" {
+                        buf.push('\n');
+                    } else if name == "a" {
                         let href = html_resolve_href(e.attr("href").unwrap_or(""), base_url);
                         let text = html_collect_text(elem_ref, base_url);
                         if !text.is_empty() && !href.is_empty() {
                             buf.push_str(&format!("{text} <link>{href}</link>"));
-                        } else if !text.is_empty() { buf.push_str(&text); }
-                    } else { buf.push_str(&html_collect_text(elem_ref, base_url)); }
+                        } else if !text.is_empty() {
+                            buf.push_str(&text);
+                        }
+                    } else {
+                        buf.push_str(&html_collect_text(elem_ref, base_url));
+                    }
                 }
             }
             _ => {}
@@ -1536,22 +1755,32 @@ fn html_collect_table_rows(node: scraper::ElementRef, out: &mut Vec<FfonElement>
     let row_sel = scraper::Selector::parse("tr").unwrap();
     for row in node.select(&row_sel) {
         let cell_sel = scraper::Selector::parse("th, td").unwrap();
-        let cells: Vec<String> = row.select(&cell_sel)
+        let cells: Vec<String> = row
+            .select(&cell_sel)
             .map(|c| html_normalize_whitespace(&c.text().collect::<String>()))
-            .filter(|s| !s.is_empty()).collect();
-        if !cells.is_empty() { out.push(FfonElement::new_str(cells.join(" | "))); }
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !cells.is_empty() {
+            out.push(FfonElement::new_str(cells.join(" | ")));
+        }
     }
 }
 
 /// Resolve a potentially relative href against a base URL.
 pub fn html_resolve_href(href: &str, base_url: &str) -> String {
-    if href.is_empty() { return String::new(); }
-    if href.starts_with('#') { return href.to_owned(); }
+    if href.is_empty() {
+        return String::new();
+    }
+    if href.starts_with('#') {
+        return href.to_owned();
+    }
     if href.contains("://") || href.starts_with("mailto:") || href.starts_with("tel:") {
         return href.to_owned();
     }
     if let Ok(base) = url::Url::parse(base_url) {
-        if let Ok(resolved) = base.join(href) { return resolved.to_string(); }
+        if let Ok(resolved) = base.join(href) {
+            return resolved.to_string();
+        }
     }
     href.to_owned()
 }
@@ -1626,8 +1855,12 @@ mod tests {
     #[test]
     fn test_clone_object_with_children() {
         let mut orig = FfonElement::new_obj("parent");
-        orig.as_obj_mut().unwrap().push(FfonElement::new_str("child1"));
-        orig.as_obj_mut().unwrap().push(FfonElement::new_str("child2"));
+        orig.as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("child1"));
+        orig.as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("child2"));
 
         let clone = orig.clone();
         let obj = clone.as_obj().unwrap();
@@ -1640,13 +1873,19 @@ mod tests {
     fn test_clone_nested_object() {
         let mut root = FfonElement::new_obj("root");
         let mut child = FfonElement::new_obj("child");
-        child.as_obj_mut().unwrap().push(FfonElement::new_str("leaf"));
+        child
+            .as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("leaf"));
         root.as_obj_mut().unwrap().push(child);
 
         let clone = root.clone();
         let cloned_child = &clone.as_obj().unwrap().children[0];
         assert_eq!(cloned_child.as_obj().unwrap().key, "child");
-        assert_eq!(cloned_child.as_obj().unwrap().children[0].as_str(), Some("leaf"));
+        assert_eq!(
+            cloned_child.as_obj().unwrap().children[0].as_str(),
+            Some("leaf")
+        );
     }
 
     // --- FfonObject add/remove ---
@@ -1704,8 +1943,10 @@ mod tests {
     fn test_id_array_equality() {
         let mut a = IdArray::new();
         let mut b = IdArray::new();
-        a.push(1); a.push(2);
-        b.push(1); b.push(2);
+        a.push(1);
+        a.push(2);
+        b.push(1);
+        b.push(2);
         assert_eq!(a, b);
         b.push(3);
         assert_ne!(a, b);
@@ -1721,7 +1962,9 @@ mod tests {
     #[test]
     fn test_id_array_to_string() {
         let mut id = IdArray::new();
-        id.push(0); id.push(3); id.push(1);
+        id.push(0);
+        id.push(3);
+        id.push(1);
         assert_eq!(id.to_display_string(), "0,3,1");
     }
 
@@ -1744,7 +1987,9 @@ mod tests {
     #[test]
     fn test_json_roundtrip_object() {
         let mut obj = FfonElement::new_obj("Section");
-        obj.as_obj_mut().unwrap().push(FfonElement::new_str("child"));
+        obj.as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("child"));
         let elems = vec![obj];
         let json = to_json_string(&elems).unwrap();
         let parsed = parse_json(&json).unwrap();
@@ -1755,7 +2000,10 @@ mod tests {
     fn test_json_roundtrip_nested() {
         let mut root = FfonElement::new_obj("root");
         let mut nested = FfonElement::new_obj("nested");
-        nested.as_obj_mut().unwrap().push(FfonElement::new_str("leaf"));
+        nested
+            .as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("leaf"));
         root.as_obj_mut().unwrap().push(nested);
         let elems = vec![root];
         let json = to_json_string(&elems).unwrap();
@@ -1796,10 +2044,7 @@ mod tests {
 
     #[test]
     fn test_binary_roundtrip_strings() {
-        let elems = vec![
-            FfonElement::new_str("hello"),
-            FfonElement::new_str("world"),
-        ];
+        let elems = vec![FfonElement::new_str("hello"), FfonElement::new_str("world")];
         let data = serialize_binary(&elems);
         let back = deserialize_binary(&data);
         assert_eq!(back, elems);
@@ -1808,8 +2053,12 @@ mod tests {
     #[test]
     fn test_binary_roundtrip_object_with_children() {
         let mut obj = FfonElement::new_obj("Section");
-        obj.as_obj_mut().unwrap().push(FfonElement::new_str("child1"));
-        obj.as_obj_mut().unwrap().push(FfonElement::new_str("child2"));
+        obj.as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("child1"));
+        obj.as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("child2"));
         let elems = vec![obj];
         let data = serialize_binary(&elems);
         let back = deserialize_binary(&data);
@@ -1820,9 +2069,14 @@ mod tests {
     fn test_binary_roundtrip_nested() {
         let mut root = FfonElement::new_obj("root");
         let mut child = FfonElement::new_obj("child");
-        child.as_obj_mut().unwrap().push(FfonElement::new_str("leaf"));
+        child
+            .as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("leaf"));
         root.as_obj_mut().unwrap().push(child);
-        root.as_obj_mut().unwrap().push(FfonElement::new_str("sibling"));
+        root.as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("sibling"));
         let elems = vec![root];
         let data = serialize_binary(&elems);
         let back = deserialize_binary(&data);
@@ -1839,10 +2093,7 @@ mod tests {
     fn test_binary_file_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.ffon");
-        let elems = vec![
-            FfonElement::new_str("a"),
-            FfonElement::new_obj("B"),
-        ];
+        let elems = vec![FfonElement::new_str("a"), FfonElement::new_obj("B")];
         save_ffon_file(&elems, &path).unwrap();
         let back = load_ffon_file(&path).unwrap();
         assert_eq!(back, elems);
@@ -1852,12 +2103,21 @@ mod tests {
 
     fn make_tree() -> Vec<FfonElement> {
         let mut root1 = FfonElement::new_obj("Section A");
-        root1.as_obj_mut().unwrap().push(FfonElement::new_str("item 0"));
-        root1.as_obj_mut().unwrap().push(FfonElement::new_str("item 1"));
+        root1
+            .as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("item 0"));
+        root1
+            .as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("item 1"));
 
         let mut root2 = FfonElement::new_obj("Section B");
         let mut nested = FfonElement::new_obj("Nested");
-        nested.as_obj_mut().unwrap().push(FfonElement::new_str("deep"));
+        nested
+            .as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("deep"));
         root2.as_obj_mut().unwrap().push(nested);
 
         vec![root1, root2]
@@ -1933,7 +2193,9 @@ mod tests {
     #[test]
     fn test_idarray_clone_populated() {
         let mut src = IdArray::new();
-        src.push(1); src.push(2); src.push(3);
+        src.push(1);
+        src.push(2);
+        src.push(3);
         let dst = src.clone();
         assert_eq!(dst.depth(), 3);
         assert_eq!(dst.get(0), Some(1));
@@ -1992,7 +2254,9 @@ mod tests {
     #[test]
     fn test_idarray_push_multiple() {
         let mut arr = IdArray::new();
-        arr.push(10); arr.push(20); arr.push(30);
+        arr.push(10);
+        arr.push(20);
+        arr.push(30);
         assert_eq!(arr.depth(), 3);
         assert_eq!(arr.get(0), Some(10));
         assert_eq!(arr.get(1), Some(20));
@@ -2002,7 +2266,8 @@ mod tests {
     #[test]
     fn test_idarray_pop_returns_value() {
         let mut arr = IdArray::new();
-        arr.push(5); arr.push(10);
+        arr.push(5);
+        arr.push(10);
         assert_eq!(arr.pop(), Some(10));
         assert_eq!(arr.depth(), 1);
     }
@@ -2017,7 +2282,8 @@ mod tests {
     #[test]
     fn test_idarray_pop_all() {
         let mut arr = IdArray::new();
-        arr.push(1); arr.push(2);
+        arr.push(1);
+        arr.push(2);
         assert_eq!(arr.pop(), Some(2));
         assert_eq!(arr.pop(), Some(1));
         assert_eq!(arr.pop(), None);
@@ -2033,7 +2299,9 @@ mod tests {
     #[test]
     fn test_idarray_tostring_multiple() {
         let mut id = IdArray::new();
-        id.push(1); id.push(2); id.push(3);
+        id.push(1);
+        id.push(2);
+        id.push(3);
         assert_eq!(id.to_display_string(), "1,2,3");
     }
 
@@ -2120,10 +2388,19 @@ mod tests {
     ///   [2] "string2"
     fn make_nav_tree() -> Vec<FfonElement> {
         let mut parent = FfonElement::new_obj("parent");
-        parent.as_obj_mut().unwrap().push(FfonElement::new_str("child0"));
-        parent.as_obj_mut().unwrap().push(FfonElement::new_str("child1"));
+        parent
+            .as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("child0"));
+        parent
+            .as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("child1"));
         let mut nested = FfonElement::new_obj("nested");
-        nested.as_obj_mut().unwrap().push(FfonElement::new_str("leaf"));
+        nested
+            .as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("leaf"));
         parent.as_obj_mut().unwrap().push(nested);
 
         vec![
@@ -2137,7 +2414,8 @@ mod tests {
     fn test_get_ffon_at_id_depth_two() {
         let tree = make_nav_tree();
         let mut id = IdArray::new();
-        id.push(1); id.push(2); // into "parent", look at "nested"
+        id.push(1);
+        id.push(2); // into "parent", look at "nested"
         let slice = get_ffon_at_id(&tree, &id).unwrap();
         // depth=2: walked [1] → parent's children (3 children)
         assert_eq!(slice.len(), 3); // parent has 3 children
@@ -2147,7 +2425,9 @@ mod tests {
     fn test_get_ffon_at_id_depth_three() {
         let tree = make_nav_tree();
         let mut id = IdArray::new();
-        id.push(1); id.push(2); id.push(0); // into parent→nested, look at "leaf"
+        id.push(1);
+        id.push(2);
+        id.push(0); // into parent→nested, look at "leaf"
         let slice = get_ffon_at_id(&tree, &id).unwrap();
         // depth=3: walked [1]→parent, [2]→nested's children (1 child)
         assert_eq!(slice.len(), 1); // nested has 1 child
@@ -2157,7 +2437,8 @@ mod tests {
     fn test_get_ffon_at_id_non_object_at_path() {
         let tree = make_nav_tree();
         let mut id = IdArray::new();
-        id.push(0); id.push(0); // string0 is not an object — can't walk into it
+        id.push(0);
+        id.push(0); // string0 is not an object — can't walk into it
         assert!(get_ffon_at_id(&tree, &id).is_none());
     }
 
@@ -2180,9 +2461,12 @@ mod tests {
     fn test_next_layer_exists_nested_object() {
         let tree = make_nav_tree();
         let mut id = IdArray::new();
-        id.push(1); id.push(2); // parent[2] = "nested" (an object)
+        id.push(1);
+        id.push(2); // parent[2] = "nested" (an object)
         assert!(next_layer_exists(&tree[1].as_obj().unwrap().children, &{
-            let mut child_id = IdArray::new(); child_id.push(2); child_id
+            let mut child_id = IdArray::new();
+            child_id.push(2);
+            child_id
         }));
     }
 
@@ -2207,7 +2491,9 @@ mod tests {
     fn test_get_ffon_max_id_deep_nested() {
         let tree = make_nav_tree();
         let mut id = IdArray::new();
-        id.push(1); id.push(2); id.push(0); // nested has 1 child → max index = 0
+        id.push(1);
+        id.push(2);
+        id.push(0); // nested has 1 child → max index = 0
         assert_eq!(get_ffon_max_id(&tree, &id), 0);
     }
 
@@ -2273,8 +2559,12 @@ mod tests {
     #[test]
     fn test_json_serialize_object_element() {
         let mut elem = FfonElement::new_obj("mykey");
-        elem.as_obj_mut().unwrap().push(FfonElement::new_str("child1"));
-        elem.as_obj_mut().unwrap().push(FfonElement::new_str("child2"));
+        elem.as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("child1"));
+        elem.as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("child2"));
         let json = to_json_string(&[elem.clone()]).unwrap();
         assert!(json.contains("mykey"));
         // Round-trip
@@ -2390,15 +2680,16 @@ mod tests {
     fn test_save_load_json_file_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("roundtrip.json");
-        let elems = vec![
-            FfonElement::new_str("version"),
-            {
-                let mut obj = FfonElement::new_obj("settings");
-                obj.as_obj_mut().unwrap().push(FfonElement::new_str("<radio>lang"));
-                obj.as_obj_mut().unwrap().push(FfonElement::new_str("English"));
-                obj
-            },
-        ];
+        let elems = vec![FfonElement::new_str("version"), {
+            let mut obj = FfonElement::new_obj("settings");
+            obj.as_obj_mut()
+                .unwrap()
+                .push(FfonElement::new_str("<radio>lang"));
+            obj.as_obj_mut()
+                .unwrap()
+                .push(FfonElement::new_str("English"));
+            obj
+        }];
         save_json_file(&elems, &path).unwrap();
         let loaded = load_json_file(&path).unwrap();
         assert_eq!(loaded, elems);
@@ -2409,7 +2700,10 @@ mod tests {
     fn test_json_nested_two_levels_with_tags() {
         // [{"project": [{"id": ["<input>test</input>"]}]}]
         let mut inner = FfonElement::new_obj("id");
-        inner.as_obj_mut().unwrap().push(FfonElement::new_str("<input>test</input>"));
+        inner
+            .as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("<input>test</input>"));
         let mut outer = FfonElement::new_obj("project");
         outer.as_obj_mut().unwrap().push(inner);
         let elems = vec![outer];
@@ -2423,7 +2717,9 @@ mod tests {
     fn test_object_insert_at_zero_goes_to_front() {
         let mut obj = FfonElement::new_obj("key");
         obj.as_obj_mut().unwrap().push(FfonElement::new_str("b"));
-        obj.as_obj_mut().unwrap().insert(0, FfonElement::new_str("a"));
+        obj.as_obj_mut()
+            .unwrap()
+            .insert(0, FfonElement::new_str("a"));
         let children = &obj.as_obj().unwrap().children;
         assert_eq!(children[0].as_str(), Some("a"));
         assert_eq!(children[1].as_str(), Some("b"));
@@ -2453,7 +2749,10 @@ mod tests {
 
     #[test]
     fn test_object_add_one_element_count_is_one() {
-        let mut obj = FfonObject { key: "root".to_string(), children: vec![] };
+        let mut obj = FfonObject {
+            key: "root".to_string(),
+            children: vec![],
+        };
         obj.push(FfonElement::new_str("hello"));
         assert_eq!(obj.children.len(), 1);
     }
@@ -2591,7 +2890,9 @@ mod tests {
     #[test]
     fn html_nav_becomes_named_obj() {
         let elems = html_to_ffon(
-            r#"<nav><a href="https://x.com/a">A</a><a href="https://x.com/b">B</a></nav>"#, "");
+            r#"<nav><a href="https://x.com/a">A</a><a href="https://x.com/b">B</a></nav>"#,
+            "",
+        );
         assert_eq!(elems.len(), 1);
         let obj = elems[0].as_obj().expect("nav should be an Obj");
         // The landmark name is enriched from its content by the navigability pass.
@@ -2626,14 +2927,17 @@ mod tests {
              </div></my-widget></my-widgets>",
             "",
         );
-        let headings: Vec<String> =
-            elems.iter().filter_map(|e| e.as_obj()).map(|o| o.key.clone()).collect();
+        let headings: Vec<String> = elems
+            .iter()
+            .filter_map(|e| e.as_obj())
+            .map(|o| o.key.clone())
+            .collect();
         assert!(headings.iter().any(|k| k == "Alpha"), "got {elems:?}");
         assert!(headings.iter().any(|k| k == "Beta"), "got {elems:?}");
         // No single Str node swallowing all the text.
-        let collapsed = elems.iter().any(|e| {
-            matches!(e, FfonElement::Str(s) if s.contains("Alpha") && s.contains("Beta"))
-        });
+        let collapsed = elems
+            .iter()
+            .any(|e| matches!(e, FfonElement::Str(s) if s.contains("Alpha") && s.contains("Beta")));
         assert!(!collapsed, "content collapsed into one string: {elems:?}");
     }
 
@@ -2642,7 +2946,9 @@ mod tests {
         // h2 must nest *inside* the h1 group, in source order — not flatten into
         // reversed siblings when the landmark's heading stack is flushed.
         let elems = html_to_ffon(
-            "<main><h1>Welcome</h1><p>Intro</p><h2>Features</h2><p>Detail</p></main>", "");
+            "<main><h1>Welcome</h1><p>Intro</p><h2>Features</h2><p>Detail</p></main>",
+            "",
+        );
         assert_eq!(elems.len(), 1);
         let main = elems[0].as_obj().unwrap();
         assert_eq!(main.key, "main content");
@@ -2650,7 +2956,11 @@ mod tests {
         let h1 = main.children[0].as_obj().unwrap();
         assert_eq!(h1.key, "Welcome");
         // h1 holds its intro paragraph and the nested h2 group.
-        let h2 = h1.children.iter().find_map(|c| c.as_obj()).expect("h2 nested under h1");
+        let h2 = h1
+            .children
+            .iter()
+            .find_map(|c| c.as_obj())
+            .expect("h2 nested under h1");
         assert_eq!(h2.key, "Features");
     }
 
@@ -2665,7 +2975,9 @@ mod tests {
     fn html_empty_nav_emits_nothing() {
         let elems = html_to_ffon("<nav></nav><p>real content</p>", "");
         assert!(
-            elems.iter().all(|e| e.as_obj().map_or(true, |o| o.key != "navigation")),
+            elems
+                .iter()
+                .all(|e| e.as_obj().map_or(true, |o| o.key != "navigation")),
             "empty nav should not emit a navigation obj: {elems:?}",
         );
     }
@@ -2679,7 +2991,9 @@ mod tests {
             r#"<nav><ul>
                  <li><a href="https://x.com/a">Home</a></li>
                  <li><a href="https://x.com/b">Docs</a></li>
-               </ul></nav>"#, "");
+               </ul></nav>"#,
+            "",
+        );
         assert_eq!(elems.len(), 1);
         let obj = elems[0].as_obj().unwrap();
         assert_eq!(obj.key, "navigation: Home, Docs", "got {:?}", obj.key);
@@ -2691,9 +3005,15 @@ mod tests {
     #[test]
     fn generic_list_renamed_from_items_with_overflow_count() {
         let elems = html_to_ffon(
-            "<ul><li>Nederlands</li><li>English</li><li>Francais</li><li>Deutsch</li></ul>", "");
+            "<ul><li>Nederlands</li><li>English</li><li>Francais</li><li>Deutsch</li></ul>",
+            "",
+        );
         let obj = elems[0].as_obj().unwrap();
-        assert_eq!(obj.key, "list: Nederlands, English, Francais +1", "got {:?}", obj.key);
+        assert_eq!(
+            obj.key, "list: Nederlands, English, Francais +1",
+            "got {:?}",
+            obj.key
+        );
     }
 
     #[test]
@@ -2712,8 +3032,12 @@ mod tests {
         // The empty <ul> produces no children, so no "list" obj survives at all,
         // but a list with only blank items must not panic or mislabel.
         let elems2 = html_to_ffon("<ul><li>  </li></ul><p>x</p>", "");
-        assert!(elems.iter().chain(elems2.iter()).all(|e|
-            e.as_obj().map_or(true, |o| !o.key.starts_with("list: "))));
+        assert!(
+            elems
+                .iter()
+                .chain(elems2.iter())
+                .all(|e| e.as_obj().map_or(true, |o| !o.key.starts_with("list: ")))
+        );
     }
 
     // ---- Form parsing tests ------------------------------------------------
@@ -2728,7 +3052,10 @@ mod tests {
         assert_eq!(form.children.len(), 1);
         let field = form.children[0].as_str().unwrap();
         assert!(field.contains("<input>"), "expected editable cell: {field}");
-        assert!(field.starts_with("Search: "), "expected placeholder label: {field}");
+        assert!(
+            field.starts_with("Search: "),
+            "expected placeholder label: {field}"
+        );
     }
 
     #[test]
@@ -2738,7 +3065,10 @@ mod tests {
         let form = elems[0].as_obj().unwrap();
         let field = form.children[0].as_str().unwrap();
         assert!(field.starts_with("username: "), "got: {field}");
-        assert!(map.contains_key("form_1/username"), "missing key in form_map: {map:?}");
+        assert!(
+            map.contains_key("form_1/username"),
+            "missing key in form_map: {map:?}"
+        );
         let node = &map["form_1/username"];
         assert_eq!(node.kind, FormNodeKind::TextInput);
     }
@@ -2774,9 +3104,9 @@ mod tests {
         let html = r#"<form><input type="checkbox" name="remember">Remember me</form>"#;
         let elems = html_to_ffon(html, "");
         let children = &elems[0].as_obj().unwrap().children;
-        let found = children.iter().any(|e| {
-            e.as_str().map_or(false, |s| s.starts_with("<checkbox>"))
-        });
+        let found = children
+            .iter()
+            .any(|e| e.as_str().map_or(false, |s| s.starts_with("<checkbox>")));
         assert!(found, "expected <checkbox> element; children: {children:?}");
     }
 
@@ -2786,7 +3116,8 @@ mod tests {
         let elems = html_to_ffon(html, "");
         let children = &elems[0].as_obj().unwrap().children;
         let found = children.iter().any(|e| {
-            e.as_str().map_or(false, |s| s.starts_with("<checkbox checked>"))
+            e.as_str()
+                .map_or(false, |s| s.starts_with("<checkbox checked>"))
         });
         assert!(found, "expected <checkbox checked>; children: {children:?}");
     }
@@ -2799,21 +3130,26 @@ mod tests {
         </select></form>"#;
         let elems = html_to_ffon(html, "");
         let form_children = &elems[0].as_obj().unwrap().children;
-        let radio = form_children.iter().find(|e| {
-            e.as_obj().map_or(false, |o| o.key.starts_with("<radio>"))
-        }).expect("expected <radio> obj for select");
+        let radio = form_children
+            .iter()
+            .find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("<radio>")))
+            .expect("expected <radio> obj for select");
         let opts = &radio.as_obj().unwrap().children;
         assert_eq!(opts.len(), 2);
-        let canada = opts.iter().find(|e| {
-            e.as_str().map_or(false, |s| s.contains("Canada"))
-        }).expect("Canada option missing");
-        assert!(canada.as_str().unwrap().starts_with("<checked>"),
-            "selected option should use <checked> tag: {canada:?}");
+        let canada = opts
+            .iter()
+            .find(|e| e.as_str().map_or(false, |s| s.contains("Canada")))
+            .expect("Canada option missing");
+        assert!(
+            canada.as_str().unwrap().starts_with("<checked>"),
+            "selected option should use <checked> tag: {canada:?}"
+        );
     }
 
     #[test]
     fn html_form_textarea() {
-        let html = r#"<form><textarea name="message" placeholder="Your message"></textarea></form>"#;
+        let html =
+            r#"<form><textarea name="message" placeholder="Your message"></textarea></form>"#;
         let (elems, map) = html_to_ffon_with_forms(html, "");
         let field = elems[0].as_obj().unwrap().children[0].as_str().unwrap();
         assert!(field.starts_with("Your message: <input>"), "got: {field}");
@@ -2843,7 +3179,11 @@ mod tests {
         </form>"#;
         let elems = html_to_ffon(html, "");
         let children = &elems[0].as_obj().unwrap().children;
-        assert_eq!(children.len(), 1, "only visible input expected; got {children:?}");
+        assert_eq!(
+            children.len(),
+            1,
+            "only visible input expected; got {children:?}"
+        );
         assert!(children[0].as_str().unwrap().contains("visible"));
     }
 
@@ -2852,10 +3192,18 @@ mod tests {
         let html = r#"<form><input type="email" name="email"></form>"#;
         let (_, map) = html_to_ffon_with_forms(html, "");
         let node = &map["form_1/email"];
-        assert!(node.css_selector.contains("name=\"email\""), "got: {}", node.css_selector);
+        assert!(
+            node.css_selector.contains("name=\"email\""),
+            "got: {}",
+            node.css_selector
+        );
         // Selector is form-relative (resolved against document.forms[i-1]),
         // not the old per-parent `form:nth-of-type(N)` form.
-        assert!(!node.css_selector.contains("nth-of-type"), "got: {}", node.css_selector);
+        assert!(
+            !node.css_selector.contains("nth-of-type"),
+            "got: {}",
+            node.css_selector
+        );
         assert_eq!(node.form_index, 1);
     }
 
@@ -2875,9 +3223,11 @@ mod tests {
     fn standalone_input_registered_with_form_index_zero() {
         // A search box outside any <form> is still fillable (form_index 0,
         // resolved against document) so JS-driven search works.
-        let (_e, map) = html_to_ffon_with_forms(
-            r#"<input type="search" name="q" placeholder="Search">"#, "");
-        let node = map.get("form_0/Search").expect("standalone input registered");
+        let (_e, map) =
+            html_to_ffon_with_forms(r#"<input type="search" name="q" placeholder="Search">"#, "");
+        let node = map
+            .get("form_0/Search")
+            .expect("standalone input registered");
         assert_eq!(node.form_index, 0);
         assert_eq!(node.css_selector, "[name=\"q\"]");
     }
@@ -2885,9 +3235,12 @@ mod tests {
     #[test]
     fn standalone_input_without_id_or_name_is_skipped() {
         // Nothing to target globally → don't register a dead entry.
-        let (_e, map) = html_to_ffon_with_forms(
-            r#"<input type="search" placeholder="Search">"#, "");
-        assert!(map.is_empty(), "untargetable standalone input must not register: {map:?}");
+        let (_e, map) =
+            html_to_ffon_with_forms(r#"<input type="search" placeholder="Search">"#, "");
+        assert!(
+            map.is_empty(),
+            "untargetable standalone input must not register: {map:?}"
+        );
     }
 
     #[test]
@@ -2900,7 +3253,10 @@ mod tests {
         let second = map.get("form_1/q (2)").expect("second field disambiguated");
         assert_eq!(first.css_selector, second.css_selector, "same selector");
         assert_eq!(first.match_index, 0);
-        assert_eq!(second.match_index, 1, "second resolves via querySelectorAll[1]");
+        assert_eq!(
+            second.match_index, 1,
+            "second resolves via querySelectorAll[1]"
+        );
     }
 
     #[test]
@@ -2909,8 +3265,14 @@ mod tests {
         let html = r#"<form><input name="q"></form><form><input name="q"></form>"#;
         let (_e, map) = html_to_ffon_with_forms(html, "");
         assert!(map.contains_key("form_1/q"), "{map:?}");
-        assert!(map.contains_key("form_2/q"), "second form's field is not suffixed: {map:?}");
-        assert_eq!(map["form_2/q"].match_index, 0, "match_index resets per form");
+        assert!(
+            map.contains_key("form_2/q"),
+            "second form's field is not suffixed: {map:?}"
+        );
+        assert_eq!(
+            map["form_2/q"].match_index, 0,
+            "match_index resets per form"
+        );
     }
 
     #[test]
@@ -2928,11 +3290,17 @@ mod tests {
         let html = r#"<form><label>Email <input type="email" name="email"></label></form>"#;
         let (elems, map) = html_to_ffon_with_forms(html, "");
         let form_children = &elems[0].as_obj().unwrap().children;
-        let has_input = form_children.iter().any(|e| {
-            e.as_str().map_or(false, |s| s.contains("<input>"))
-        });
-        assert!(has_input, "labeled input not found in form children: {form_children:?}");
-        assert!(map.contains_key("form_1/email"), "form_map missing labeled input key");
+        let has_input = form_children
+            .iter()
+            .any(|e| e.as_str().map_or(false, |s| s.contains("<input>")));
+        assert!(
+            has_input,
+            "labeled input not found in form children: {form_children:?}"
+        );
+        assert!(
+            map.contains_key("form_1/email"),
+            "form_map missing labeled input key"
+        );
     }
 
     #[test]
@@ -2942,9 +3310,18 @@ mod tests {
         let html = r#"<form><input type="text" id="search-input" name="q"></form>"#;
         let (elems, map) = html_to_ffon_with_forms(html, "");
         let field = elems[0].as_obj().unwrap().children[0].as_str().unwrap();
-        assert!(!field.contains("<id>"), "spurious <id> tag in form field: {field}");
-        assert!(field.starts_with("q: "), "expected name-derived label: {field}");
-        assert!(map.contains_key("form_1/q"), "form_map key must match bare label");
+        assert!(
+            !field.contains("<id>"),
+            "spurious <id> tag in form field: {field}"
+        );
+        assert!(
+            field.starts_with("q: "),
+            "expected name-derived label: {field}"
+        );
+        assert!(
+            map.contains_key("form_1/q"),
+            "form_map key must match bare label"
+        );
     }
 
     #[test]
@@ -2953,9 +3330,18 @@ mod tests {
         let html = r#"<form><input type="text" id="email-field"></form>"#;
         let (elems, map) = html_to_ffon_with_forms(html, "");
         let field = elems[0].as_obj().unwrap().children[0].as_str().unwrap();
-        assert!(!field.contains("<id>"), "spurious <id> tag in form field: {field}");
-        assert!(field.starts_with("email-field: "), "expected id-derived label: {field}");
-        assert!(map.contains_key("form_1/email-field"), "form_map key must match bare id");
+        assert!(
+            !field.contains("<id>"),
+            "spurious <id> tag in form field: {field}"
+        );
+        assert!(
+            field.starts_with("email-field: "),
+            "expected id-derived label: {field}"
+        );
+        assert!(
+            map.contains_key("form_1/email-field"),
+            "form_map key must match bare id"
+        );
     }
 
     // ---- Phase E: p/li recurse via process_mixed_into -------------------------
@@ -2964,18 +3350,32 @@ mod tests {
     fn html_p_with_nested_form_keeps_form() {
         let html = r#"<p>Try this <form><input type="text" name="q"></form></p>"#;
         let elems = html_to_ffon(html, "");
-        let form_found = elems.iter().any(|e| e.as_obj().map_or(false, |o| o.key == "form_1"));
-        assert!(form_found, "form nested inside <p> should be rendered: {elems:?}");
+        let form_found = elems
+            .iter()
+            .any(|e| e.as_obj().map_or(false, |o| o.key == "form_1"));
+        assert!(
+            form_found,
+            "form nested inside <p> should be rendered: {elems:?}"
+        );
     }
 
     #[test]
     fn html_li_with_nested_heading() {
         let elems = html_to_ffon("<ul><li><h3>Sub</h3></li></ul>", "");
-        let list = elems.iter().find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("list")))
+        let list = elems
+            .iter()
+            .find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("list")))
             .expect("expected list obj");
-        let found = list.as_obj().unwrap().children.iter()
+        let found = list
+            .as_obj()
+            .unwrap()
+            .children
+            .iter()
             .any(|e| e.as_obj().map_or(false, |o| o.key.contains("Sub")));
-        assert!(found, "heading inside <li> should appear as Obj child: {list:?}");
+        assert!(
+            found,
+            "heading inside <li> should appear as Obj child: {list:?}"
+        );
     }
 
     // ---- List rendering regression guards (pinned before Phase E) ------------
@@ -2983,7 +3383,9 @@ mod tests {
     #[test]
     fn html_li_text_gets_bullet_prefix() {
         let elems = html_to_ffon("<ul><li>Alpha</li><li>Beta</li></ul>", "");
-        let list = elems.iter().find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("list")))
+        let list = elems
+            .iter()
+            .find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("list")))
             .expect("expected a list obj");
         let children = &list.as_obj().unwrap().children;
         assert_eq!(children[0].as_str().unwrap(), "- Alpha");
@@ -2993,7 +3395,12 @@ mod tests {
     #[test]
     fn html_ol_item_gets_number_prefix() {
         let elems = html_to_ffon("<ol><li>First</li><li>Second</li></ol>", "");
-        let list = elems.iter().find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("ordered list")))
+        let list = elems
+            .iter()
+            .find(|e| {
+                e.as_obj()
+                    .map_or(false, |o| o.key.starts_with("ordered list"))
+            })
             .expect("expected an ordered list obj");
         let children = &list.as_obj().unwrap().children;
         assert_eq!(children[0].as_str().unwrap(), "1. First");
@@ -3003,14 +3410,20 @@ mod tests {
     #[test]
     fn html_link_inside_li_rendered() {
         let elems = html_to_ffon(r#"<ul><li><a href="https://x.com">X</a></li></ul>"#, "");
-        let list = elems.iter().find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("list")))
+        let list = elems
+            .iter()
+            .find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("list")))
             .expect("expected a list obj");
         let children = &list.as_obj().unwrap().children;
         assert!(!children.is_empty(), "list should have at least one child");
         let found = children.iter().any(|e| {
-            e.as_obj().map_or(false, |o| o.key.contains("<link>") && o.key.contains("x.com"))
-                || e.as_str().map_or(false, |s| s.contains("X"))
+            e.as_obj().map_or(false, |o| {
+                o.key.contains("<link>") && o.key.contains("x.com")
+            }) || e.as_str().map_or(false, |s| s.contains("X"))
         });
-        assert!(found, "link inside li should appear in output, got: {children:?}");
+        assert!(
+            found,
+            "link inside li should appear in output, got: {children:?}"
+        );
     }
 }

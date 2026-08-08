@@ -68,8 +68,8 @@ pub use dashboard::{
 };
 pub use ffon::{FfonElement, FfonObject, IdArray};
 pub use placeholders::{
-    is_ci_placeholder, is_i_placeholder, new_obj_with_i_placeholder, seed_i_placeholders,
-    CI_PLACEHOLDER, I_PLACEHOLDER,
+    CI_PLACEHOLDER, I_PLACEHOLDER, is_ci_placeholder, is_i_placeholder, new_obj_with_i_placeholder,
+    seed_i_placeholders,
 };
 pub use provider::{ListItem, NavigationRequest, Provider, SearchResultItem};
 pub use timeline::{
@@ -79,12 +79,12 @@ pub use timeline::{
 
 #[cfg(feature = "host")]
 pub use fs_trash::{
-    restore_from_os_trash, restore_side_effect, restore_trashed_tree, snapshot_for_delete,
-    TRASH_SNAPSHOT_LIMIT_BYTES,
+    TRASH_SNAPSHOT_LIMIT_BYTES, restore_from_os_trash, restore_side_effect, restore_trashed_tree,
+    snapshot_for_delete,
 };
 #[cfg(feature = "host")]
 pub use manifest::{
-    builtin_manifests, register_builtin_manifest, BuiltinManifest, SettingDecl, SettingKind,
+    BuiltinManifest, SettingDecl, SettingKind, builtin_manifests, register_builtin_manifest,
 };
 // The factory registry is a process-global `Vec<(String, ProviderFactory)>` of
 // boxed closures. A guest has neither the closures nor a shared registry to put
@@ -175,8 +175,14 @@ mod feature_split_tests {
         };
 
         // Provider trait support types.
-        let _ = ListItem { label: "l".to_owned(), data: "d".to_owned() };
-        assert_eq!(NavigationRequest::EnterChildren, NavigationRequest::EnterChildren);
+        let _ = ListItem {
+            label: "l".to_owned(),
+            data: "d".to_owned(),
+        };
+        assert_eq!(
+            NavigationRequest::EnterChildren,
+            NavigationRequest::EnterChildren
+        );
     }
 
     /// The host half must stay *absent* without the feature, not merely unused —

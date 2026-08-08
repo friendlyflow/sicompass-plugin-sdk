@@ -80,8 +80,14 @@ pub enum StructuralOp {
 pub enum StructuralPayload {
     Inserted(FfonElement),
     Removed(FfonElement),
-    Pasted { before: FfonElement, after: FfonElement },
-    Replaced { before: FfonElement, after: FfonElement },
+    Pasted {
+        before: FfonElement,
+        after: FfonElement,
+    },
+    Replaced {
+        before: FfonElement,
+        after: FfonElement,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,7 +209,9 @@ mod tests {
         let clone = entry.clone();
         assert_eq!(entry, clone);
         match clone {
-            TimelineEntry::Navigate { kind, from_path, .. } => {
+            TimelineEntry::Navigate {
+                kind, from_path, ..
+            } => {
                 assert_eq!(kind, NavKind::ArrowRight);
                 assert_eq!(from_path.as_deref(), Some("/a"));
             }
@@ -220,7 +228,12 @@ mod tests {
             chunk_seq: 7,
         };
         match entry {
-            TimelineEntry::TextChunk { before, after, chunk_seq, .. } => {
+            TimelineEntry::TextChunk {
+                before,
+                after,
+                chunk_seq,
+                ..
+            } => {
                 assert_eq!(before, FfonElement::Str("- old".into()));
                 assert_eq!(after, FfonElement::Str("- new".into()));
                 assert_eq!(chunk_seq, 7);
@@ -243,7 +256,9 @@ mod tests {
             content_snapshot: b"hello".to_vec(),
         };
         match se {
-            FsSideEffect::TrashedFile { content_snapshot, .. } => {
+            FsSideEffect::TrashedFile {
+                content_snapshot, ..
+            } => {
                 assert_eq!(content_snapshot, b"hello");
             }
             _ => panic!("wrong variant"),
@@ -256,10 +271,7 @@ mod tests {
             ("a.txt".into(), TrashedTree::File(b"a".to_vec())),
             (
                 "sub".into(),
-                TrashedTree::Dir(vec![(
-                    "b.txt".into(),
-                    TrashedTree::File(b"b".to_vec()),
-                )]),
+                TrashedTree::Dir(vec![("b.txt".into(), TrashedTree::File(b"b".to_vec()))]),
             ),
         ]);
         match tree {
@@ -276,7 +288,11 @@ mod tests {
             dst_folder: "Archive".into(),
         };
         match op {
-            ImapOpKind::Move { msg_id, src_folder, dst_folder } => {
+            ImapOpKind::Move {
+                msg_id,
+                src_folder,
+                dst_folder,
+            } => {
                 assert_eq!(msg_id, "<abc@host>");
                 assert_eq!(src_folder, "INBOX");
                 assert_eq!(dst_folder, "Archive");

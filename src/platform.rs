@@ -175,9 +175,13 @@ pub fn atomic_write(path: &std::path::Path, contents: &str) -> bool {
 /// Returns `"/"` on Unix, `"\\"` on Windows.
 pub fn path_separator() -> &'static str {
     #[cfg(target_os = "windows")]
-    { "\\" }
+    {
+        "\\"
+    }
     #[cfg(not(target_os = "windows"))]
-    { "/" }
+    {
+        "/"
+    }
 }
 
 pub fn is_windows() -> bool {
@@ -222,7 +226,10 @@ pub fn open_with(program: &str, file_path: &str) -> bool {
     }
     #[cfg(target_os = "macos")]
     {
-        Command::new("open").args(["-a", program, file_path]).spawn().is_ok()
+        Command::new("open")
+            .args(["-a", program, file_path])
+            .spawn()
+            .is_ok()
     }
     #[cfg(target_os = "windows")]
     {
@@ -381,8 +388,18 @@ fn parse_desktop_file(content: &str) -> Option<(String, String)> {
             let code = bytes[i + 1];
             if matches!(
                 code,
-                b'f' | b'F' | b'u' | b'U' | b'd' | b'D'
-                    | b'n' | b'N' | b'i' | b'c' | b'k' | b'v' | b'm'
+                b'f' | b'F'
+                    | b'u'
+                    | b'U'
+                    | b'd'
+                    | b'D'
+                    | b'n'
+                    | b'N'
+                    | b'i'
+                    | b'c'
+                    | b'k'
+                    | b'v'
+                    | b'm'
             ) {
                 i += 2;
                 if i < bytes.len() && bytes[i] == b' ' {
@@ -408,13 +425,17 @@ fn get_applications_from_dirs(dirs: &[PathBuf]) -> Vec<Application> {
     let mut apps = Vec::new();
     let mut seen_execs: HashSet<String> = HashSet::new();
     for dir in dirs {
-        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("desktop") {
                 continue;
             }
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             if let Some((name, exec)) = parse_desktop_file(&content) {
                 if seen_execs.contains(&exec) {
                     continue;
@@ -445,7 +466,9 @@ fn get_applications_macos() -> Vec<Application> {
     };
 
     for dir in &dirs {
-        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
@@ -455,7 +478,10 @@ fn get_applications_macos() -> Vec<Application> {
             if name_str.ends_with(".app") {
                 let display = name_str[..name_str.len() - 4].to_string();
                 if seen_names.insert(display.clone()) {
-                    apps.push(Application { name: display.clone(), exec: display });
+                    apps.push(Application {
+                        name: display.clone(),
+                        exec: display,
+                    });
                 }
             } else {
                 // One level deep into subdirectories (e.g. /Applications/Utilities/)
@@ -463,7 +489,9 @@ fn get_applications_macos() -> Vec<Application> {
                 if !sub_path.is_dir() {
                     continue;
                 }
-                let Ok(sub_entries) = std::fs::read_dir(&sub_path) else { continue };
+                let Ok(sub_entries) = std::fs::read_dir(&sub_path) else {
+                    continue;
+                };
                 for sub_entry in sub_entries.flatten() {
                     let sub_name = sub_entry.file_name();
                     let sub_str = sub_name.to_string_lossy();
@@ -472,7 +500,10 @@ fn get_applications_macos() -> Vec<Application> {
                     }
                     let display = sub_str[..sub_str.len() - 4].to_string();
                     if seen_names.insert(display.clone()) {
-                        apps.push(Application { name: display.clone(), exec: display });
+                        apps.push(Application {
+                            name: display.clone(),
+                            exec: display,
+                        });
                     }
                 }
             }
@@ -487,16 +518,15 @@ fn get_applications_macos() -> Vec<Application> {
 
 #[cfg(target_os = "windows")]
 fn get_applications_windows() -> Vec<Application> {
-    use winreg::enums::*;
     use winreg::RegKey;
+    use winreg::enums::*;
 
     let mut apps = Vec::new();
     let mut seen_names: HashSet<String> = HashSet::new();
 
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    let Ok(key) = hklm.open_subkey(
-        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths",
-    ) else {
+    let Ok(key) = hklm.open_subkey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths")
+    else {
         return apps;
     };
 
@@ -509,7 +539,10 @@ fn get_applications_windows() -> Vec<Application> {
         };
 
         if seen_names.insert(display.to_ascii_lowercase()) {
-            apps.push(Application { name: display, exec: sub_key_name });
+            apps.push(Application {
+                name: display,
+                exec: sub_key_name,
+            });
         }
     }
     apps
@@ -532,7 +565,9 @@ pub fn ensure_bun_on_path() {
         use std::sync::OnceLock;
         static DONE: OnceLock<()> = OnceLock::new();
         DONE.get_or_init(|| {
-            let Some(home) = home_dir() else { return; };
+            let Some(home) = home_dir() else {
+                return;
+            };
             let bun_dir = home.join(".bun").join("bin");
             if !bun_dir.join("bun.exe").exists() {
                 return;
@@ -570,20 +605,27 @@ pub fn ensure_bun_on_path() {
 /// last resort so that error messages point somewhere meaningful.
 pub fn resolve_repo_asset(rel: &str) -> std::path::PathBuf {
     let from_manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..").join(rel);
+        .join("../..")
+        .join(rel);
     if from_manifest.exists() {
         return from_manifest;
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let a = dir.join(rel);
-            if a.exists() { return a; }
+            if a.exists() {
+                return a;
+            }
             let b = dir.join("..").join(rel);
-            if b.exists() { return b; }
+            if b.exists() {
+                return b;
+            }
         }
     }
     let cwd = std::path::PathBuf::from(rel);
-    if cwd.exists() { return cwd; }
+    if cwd.exists() {
+        return cwd;
+    }
     from_manifest
 }
 
@@ -640,7 +682,9 @@ mod tests {
     #[test]
     fn test_downloads_dir_ends_with_downloads() {
         let p = downloads_dir().unwrap();
-        assert!(p.to_string_lossy().contains("Downloads") || p.to_string_lossy().contains("downloads"));
+        assert!(
+            p.to_string_lossy().contains("Downloads") || p.to_string_lossy().contains("downloads")
+        );
     }
 
     #[test]
@@ -740,7 +784,8 @@ mod linux_tests {
     #[test]
     fn test_fields_before_desktop_entry_ignored() {
         // Fields appearing before any section header are outside [Desktop Entry]
-        let content = "Name=Ghost\nExec=ghost\n[Desktop Entry]\nType=Application\nName=Real\nExec=real\n";
+        let content =
+            "Name=Ghost\nExec=ghost\n[Desktop Entry]\nType=Application\nName=Real\nExec=real\n";
         let result = parse_desktop_file(content);
         assert_eq!(result, Some(("Real".into(), "real".into())));
     }
@@ -779,8 +824,16 @@ mod linux_tests {
         let tmp = tempfile::tempdir().unwrap();
         let a = tmp.path().join("a.desktop");
         let b = tmp.path().join("b.desktop");
-        fs::write(&a, "[Desktop Entry]\nType=Application\nName=AppA\nExec=myapp\n").unwrap();
-        fs::write(&b, "[Desktop Entry]\nType=Application\nName=AppB\nExec=myapp\n").unwrap();
+        fs::write(
+            &a,
+            "[Desktop Entry]\nType=Application\nName=AppA\nExec=myapp\n",
+        )
+        .unwrap();
+        fs::write(
+            &b,
+            "[Desktop Entry]\nType=Application\nName=AppB\nExec=myapp\n",
+        )
+        .unwrap();
         let apps = get_applications_from_dirs(&[tmp.path().to_path_buf()]);
         assert_eq!(apps.len(), 1, "duplicate exec should be deduplicated");
     }
@@ -790,8 +843,16 @@ mod linux_tests {
         let tmp = tempfile::tempdir().unwrap();
         let a = tmp.path().join("a.desktop");
         let b = tmp.path().join("b.desktop");
-        fs::write(&a, "[Desktop Entry]\nType=Application\nName=AppA\nExec=app-a\n").unwrap();
-        fs::write(&b, "[Desktop Entry]\nType=Application\nName=AppB\nExec=app-b\n").unwrap();
+        fs::write(
+            &a,
+            "[Desktop Entry]\nType=Application\nName=AppA\nExec=app-a\n",
+        )
+        .unwrap();
+        fs::write(
+            &b,
+            "[Desktop Entry]\nType=Application\nName=AppB\nExec=app-b\n",
+        )
+        .unwrap();
         let apps = get_applications_from_dirs(&[tmp.path().to_path_buf()]);
         assert_eq!(apps.len(), 2);
     }
@@ -820,7 +881,10 @@ mod linux_tests {
     #[test]
     fn test_application_dirs_honours_xdg_data_dirs() {
         // NixOS-shaped: nothing under /usr, entries reachable only via the var.
-        let got = dirs(None, Some("/run/current-system/sw/share:/nix/profile/share"));
+        let got = dirs(
+            None,
+            Some("/run/current-system/sw/share:/nix/profile/share"),
+        );
         assert_eq!(got[0], "/home/u/.local/share/applications");
         assert_eq!(got[1], "/run/current-system/sw/share/applications");
         assert_eq!(got[2], "/nix/profile/share/applications");
@@ -832,8 +896,13 @@ mod linux_tests {
         // XDG_DATA_HOME wins the lookup order. ~/.local/share still appears as a
         // legacy fallback (the pre-XDG code always scanned it), just later.
         assert_eq!(got[0], "/custom/data/applications");
-        let home_pos = got.iter().position(|d| d == "/home/u/.local/share/applications");
-        assert!(home_pos.is_some_and(|i| i > 0), "home dir should follow XDG_DATA_HOME: {got:?}");
+        let home_pos = got
+            .iter()
+            .position(|d| d == "/home/u/.local/share/applications");
+        assert!(
+            home_pos.is_some_and(|i| i > 0),
+            "home dir should follow XDG_DATA_HOME: {got:?}"
+        );
     }
 
     #[test]

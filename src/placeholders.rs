@@ -41,11 +41,14 @@ pub fn new_obj_with_i_placeholder(key: impl Into<String>) -> FfonElement {
 pub fn seed_i_placeholders(elems: &mut Vec<FfonElement>) {
     for elem in elems.iter_mut() {
         if let FfonElement::Obj(o) = elem {
-            let already_seeded = o.children.first()
+            let already_seeded = o
+                .children
+                .first()
                 .map(|c| matches!(c, FfonElement::Str(s) if is_i_placeholder(s)))
                 .unwrap_or(false);
             if !already_seeded {
-                o.children.insert(0, FfonElement::new_str(I_PLACEHOLDER.to_owned()));
+                o.children
+                    .insert(0, FfonElement::new_str(I_PLACEHOLDER.to_owned()));
             }
             seed_i_placeholders(&mut o.children);
         }
@@ -100,7 +103,9 @@ mod tests {
     fn seed_i_placeholders_adds_to_unseeded_obj() {
         let mut elems = vec![{
             let mut obj = FfonElement::new_obj("k");
-            obj.as_obj_mut().unwrap().push(FfonElement::new_str("child".to_owned()));
+            obj.as_obj_mut()
+                .unwrap()
+                .push(FfonElement::new_str("child".to_owned()));
             obj
         }];
         seed_i_placeholders(&mut elems);
@@ -119,7 +124,10 @@ mod tests {
     #[test]
     fn seed_i_placeholders_recurses_into_nested_objs() {
         let mut inner = FfonElement::new_obj("inner");
-        inner.as_obj_mut().unwrap().push(FfonElement::new_str("x".to_owned()));
+        inner
+            .as_obj_mut()
+            .unwrap()
+            .push(FfonElement::new_str("x".to_owned()));
         let mut outer = FfonElement::new_obj("outer");
         outer.as_obj_mut().unwrap().push(inner);
         let mut elems = vec![outer];

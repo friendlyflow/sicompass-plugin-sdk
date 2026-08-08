@@ -31,7 +31,7 @@ pub enum NavigationRequest {
     EnterChildren,
 }
 
-/// A result item from deep search (Ctrl+F).
+/// A result item from extended search (Ctrl+F).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchResultItem {
     /// Display label with prefix, e.g. `"- report.pdf"`, `"+ docs"`
@@ -68,7 +68,9 @@ pub trait Provider: Send + 'static {
     /// tree under the provider's section. Built-ins typically return
     /// `Some(env!("CARGO_PKG_VERSION"))`; third-party plugins normally leave
     /// the default (their version is read from `plugin.json` instead).
-    fn version(&self) -> Option<&str> { None }
+    fn version(&self) -> Option<&str> {
+        None
+    }
 
     // ---- Required: data source ---------------------------------------------
 
@@ -91,19 +93,29 @@ pub trait Provider: Send + 'static {
 
     fn push_path(&mut self, _segment: &str) {}
     fn pop_path(&mut self) {}
-    fn current_path(&self) -> &str { "/" }
+    fn current_path(&self) -> &str {
+        "/"
+    }
     fn set_current_path(&mut self, _path: &str) {}
 
     /// OS process id of a backing child process (e.g. a terminal's shell), if
     /// any. Default: none. Used by the tab switcher to identify a tab by its
     /// shell PID.
-    fn process_id(&self) -> Option<u32> { None }
+    fn process_id(&self) -> Option<u32> {
+        None
+    }
 
     // ---- Optional: file operations -----------------------------------------
 
-    fn create_directory(&mut self, _name: &str) -> bool { false }
-    fn create_file(&mut self, _name: &str) -> bool { false }
-    fn delete_item(&mut self, _name: &str) -> bool { false }
+    fn create_directory(&mut self, _name: &str) -> bool {
+        false
+    }
+    fn create_file(&mut self, _name: &str) -> bool {
+        false
+    }
+    fn delete_item(&mut self, _name: &str) -> bool {
+        false
+    }
     fn copy_item(
         &mut self,
         _src_dir: &str,
@@ -116,7 +128,9 @@ pub trait Provider: Send + 'static {
 
     // ---- Optional: commands ------------------------------------------------
 
-    fn commands(&self) -> Vec<String> { vec![] }
+    fn commands(&self) -> Vec<String> {
+        vec![]
+    }
 
     /// Handle a command — optionally return a UI element for gathering input.
     fn handle_command(
@@ -129,8 +143,12 @@ pub trait Provider: Send + 'static {
         None
     }
 
-    fn command_list_items(&self, _cmd: &str) -> Vec<ListItem> { vec![] }
-    fn execute_command(&mut self, _cmd: &str, _selection: &str) -> bool { false }
+    fn command_list_items(&self, _cmd: &str) -> Vec<ListItem> {
+        vec![]
+    }
+    fn execute_command(&mut self, _cmd: &str, _selection: &str) -> bool {
+        false
+    }
 
     /// Display label for a command ID. The strings returned by `commands()`
     /// are stable identifiers (matched on in `handle_command` /
@@ -146,7 +164,9 @@ pub trait Provider: Send + 'static {
     /// may emit zero, one, or several entries. The app dispatcher calls this
     /// after every `handle_command` / `execute_command` / `commit_edit` and
     /// pushes the entries onto the active tab's timeline in order.
-    fn take_timeline_entries(&mut self) -> Vec<TimelineEntry> { Vec::new() }
+    fn take_timeline_entries(&mut self) -> Vec<TimelineEntry> {
+        Vec::new()
+    }
 
     /// Reverse a previously emitted timeline entry. Providers match on the
     /// variants they emit; others can leave this as a no-op. Sets `error` on
@@ -172,14 +192,18 @@ pub trait Provider: Send + 'static {
     /// Called once per frame from the main loop. Providers use this to drive
     /// background state (e.g. polling async I/O). Return `true` if the view
     /// needs a redraw as a result.
-    fn tick(&mut self) -> bool { false }
+    fn tick(&mut self) -> bool {
+        false
+    }
 
     /// Whether the provider currently has work in flight that the user would
     /// not want to lose by closing the tab — e.g. a terminal running a
     /// foreground command or a full-screen interactive program. The app
     /// queries this on Ctrl+W and asks the user to confirm before tearing the
     /// provider (and its child process) down. Default: never busy.
-    fn is_busy(&self) -> bool { false }
+    fn is_busy(&self) -> bool {
+        false
+    }
 
     // ---- Optional: settings section management -----------------------------
 
@@ -212,28 +236,52 @@ pub trait Provider: Send + 'static {
 
     /// Register a text entry in a settings section.
     /// Mirrors `settingsAddSectionText` in C. Default: no-op.
-    fn add_text_setting(&mut self, _section: &str, _label: &str,
-                        _config_key: &str, _default: &str) {}
+    fn add_text_setting(
+        &mut self,
+        _section: &str,
+        _label: &str,
+        _config_key: &str,
+        _default: &str,
+    ) {
+    }
 
     /// Register a password text entry in a settings section. Behaves like
     /// [`Provider::add_text_setting`] but the value is rendered masked (one
     /// asterisk per character) in the settings panel and while being edited.
     /// Default: delegate to `add_text_setting` (unmasked) so providers that
     /// don't distinguish still get a working field.
-    fn add_password_setting(&mut self, section: &str, label: &str,
-                            config_key: &str, default: &str) {
+    fn add_password_setting(
+        &mut self,
+        section: &str,
+        label: &str,
+        config_key: &str,
+        default: &str,
+    ) {
         self.add_text_setting(section, label, config_key, default);
     }
 
     /// Register a checkbox entry in a settings section.
     /// Mirrors `settingsAddSectionCheckbox` in C. Default: no-op.
-    fn add_checkbox_setting(&mut self, _section: &str, _label: &str,
-                            _config_key: &str, _default_checked: bool) {}
+    fn add_checkbox_setting(
+        &mut self,
+        _section: &str,
+        _label: &str,
+        _config_key: &str,
+        _default_checked: bool,
+    ) {
+    }
 
     /// Register a radio group in a settings section.
     /// Mirrors `settingsAddSectionRadio` in C. Default: no-op.
-    fn add_radio_setting(&mut self, _section: &str, _label: &str,
-                         _config_key: &str, _options: &[&str], _default: &str) {}
+    fn add_radio_setting(
+        &mut self,
+        _section: &str,
+        _label: &str,
+        _config_key: &str,
+        _options: &[&str],
+        _default: &str,
+    ) {
+    }
 
     /// Write a string setting under `section` / `key`, persisting to disk.
     /// Used by the app to persist runtime state (e.g. tab layout). Default: no-op.
@@ -247,13 +295,17 @@ pub trait Provider: Send + 'static {
     fn on_setting_change(&mut self, _key: &str, _value: &str) {}
 
     /// Create a new FFON element for an "Add element:" section.
-    fn create_element(&mut self, _key: &str) -> Option<FfonElement> { None }
+    fn create_element(&mut self, _key: &str) -> Option<FfonElement> {
+        None
+    }
 
-    // ---- Optional: deep search ---------------------------------------------
+    // ---- Optional: extended search -----------------------------------------
 
     /// Collect all searchable items for Ctrl+F extended search.
     /// Returns `None` to fall back to FFON-tree traversal.
-    fn collect_deep_search_items(&self) -> Option<Vec<SearchResultItem>> { None }
+    fn collect_extended_search_items(&self) -> Option<Vec<SearchResultItem>> {
+        None
+    }
 
     // ---- Optional: meta/help -----------------------------------------------
 
@@ -263,12 +315,18 @@ pub trait Provider: Send + 'static {
     /// running through a generic placeholder flow, and the meta/scroll
     /// hint screens are suppressed. Default `false`; the editor provider
     /// overrides.
-    fn has_editor_semantics(&self) -> bool { false }
+    fn has_editor_semantics(&self) -> bool {
+        false
+    }
 
     // ---- Optional: persistent config ---------------------------------------
 
-    fn load_config(&mut self, _path: &Path) -> bool { false }
-    fn save_config(&self, _path: &Path) -> bool { false }
+    fn load_config(&mut self, _path: &Path) -> bool {
+        false
+    }
+    fn save_config(&self, _path: &Path) -> bool {
+        false
+    }
 
     // ---- Optional: metadata ------------------------------------------------
 
@@ -276,7 +334,9 @@ pub trait Provider: Send + 'static {
     /// [`Provider::dashboard_kind`] returns [`DashboardKind::Image`] (or, for
     /// backwards compatibility, when `dashboard_kind` is left at its default
     /// `None` and a non-empty path is returned here).
-    fn dashboard_image_path(&self) -> Option<&str> { None }
+    fn dashboard_image_path(&self) -> Option<&str> {
+        None
+    }
 
     // ---- Optional: interactive dashboard -----------------------------------
 
@@ -287,7 +347,9 @@ pub trait Provider: Send + 'static {
     /// `dashboard_image_path()` opt-in. Returning [`DashboardKind::Interactive`]
     /// switches the app into a cell-grid mode where keystrokes, text input,
     /// and resize events are forwarded to this provider every frame.
-    fn dashboard_kind(&self) -> DashboardKind { DashboardKind::None }
+    fn dashboard_kind(&self) -> DashboardKind {
+        DashboardKind::None
+    }
 
     /// Render one frame of the interactive dashboard.
     ///
@@ -301,7 +363,9 @@ pub trait Provider: Send + 'static {
     /// Forward a non-printable / modified key event to the provider while
     /// it owns the interactive dashboard. Return `true` if the event was
     /// consumed and the app should request a redraw.
-    fn dashboard_key(&mut self, _key: DashboardKey) -> bool { false }
+    fn dashboard_key(&mut self, _key: DashboardKey) -> bool {
+        false
+    }
 
     /// Forward an SDL `TextInput` event to the provider while it owns the
     /// interactive dashboard. `text` is what the OS produced (handles dead
@@ -338,7 +402,9 @@ pub trait Provider: Send + 'static {
     /// Used by providers (e.g. terminal) where the dashboard is only useful
     /// while a TUI is running, and a "stuck in a bare-shell dashboard" state
     /// would have no clean manual exit path.
-    fn manual_dashboard_entry_allowed(&self) -> bool { true }
+    fn manual_dashboard_entry_allowed(&self) -> bool {
+        true
+    }
 
     /// Take any pending dashboard mode-switch request this provider has
     /// accumulated since the last poll.
@@ -351,7 +417,9 @@ pub trait Provider: Send + 'static {
     /// — e.g. the terminal provider noticing a child program just emitted
     /// `ESC[?1049h` (vim, less, htop, …) and wanting to surface as the
     /// interactive dashboard automatically.
-    fn take_dashboard_request(&mut self) -> Option<DashboardRequest> { None }
+    fn take_dashboard_request(&mut self) -> Option<DashboardRequest> {
+        None
+    }
 
     /// Take any pending cursor move this provider has accumulated since the
     /// last poll.
@@ -361,14 +429,19 @@ pub trait Provider: Send + 'static {
     /// without an intervening request must return `None`. Only the *active*
     /// provider's request is honoured, so a background provider can never yank
     /// the cursor out of the view the user is reading. Default: no request.
-    fn take_navigation_request(&mut self) -> Option<NavigationRequest> { None }
-
+    fn take_navigation_request(&mut self) -> Option<NavigationRequest> {
+        None
+    }
 
     /// Enable Ctrl+S/O save/load for this provider.
-    fn supports_config_files(&self) -> bool { false }
+    fn supports_config_files(&self) -> bool {
+        false
+    }
 
     /// If true, always re-fetch on navigation (no caching).
-    fn no_cache(&self) -> bool { false }
+    fn no_cache(&self) -> bool {
+        false
+    }
 
     /// Returns `true` when `current_path()` is a real filesystem path
     /// (slash-separated directory segments). Drives how the timeline view
@@ -376,14 +449,18 @@ pub trait Provider: Send + 'static {
     /// (`/home/nico/foo`), other providers' paths are split on `/` and
     /// rendered as a breadcrumb so the user doesn't see synthetic slashes
     /// in front of section names. Defaults to `false`.
-    fn path_is_filesystem(&self) -> bool { false }
+    fn path_is_filesystem(&self) -> bool {
+        false
+    }
 
     /// If `true`, `refresh_current_directory` always uses `display_name()` as
     /// the provider root Obj's key, regardless of the current path depth.
     /// Default `false` preserves the existing path-segment breadcrumb label
     /// (filebrowser shows the current directory name). Chat-style providers
     /// override this to keep a stable identity label ("chat client").
-    fn stable_root_key(&self) -> bool { false }
+    fn stable_root_key(&self) -> bool {
+        false
+    }
 
     /// True when the user has not navigated past the provider's logical root.
     ///
@@ -399,13 +476,17 @@ pub trait Provider: Send + 'static {
 
     // ---- Optional: cross-thread refresh signal -----------------------------
 
-    fn needs_refresh(&self) -> bool { false }
+    fn needs_refresh(&self) -> bool {
+        false
+    }
     fn clear_needs_refresh(&mut self) {}
 
     // ---- Optional: error reporting -----------------------------------------
 
     /// Take (consume) any pending error message.
-    fn take_error(&mut self) -> Option<String> { None }
+    fn take_error(&mut self) -> Option<String> {
+        None
+    }
 
     // ---- Optional: sub-tree refresh ----------------------------------------
 
@@ -418,14 +499,18 @@ pub trait Provider: Send + 'static {
     /// returns the correct child list directly.
     ///
     /// Returns `None` (default) to signal "fall back to `refresh_current_directory`".
-    fn fetch_subtree_children(&mut self) -> Option<Vec<FfonElement>> { None }
+    fn fetch_subtree_children(&mut self) -> Option<Vec<FfonElement>> {
+        None
+    }
 
     /// Return the current display key for the parent Obj when inside a subtree,
     /// so `refresh_subtree_parent` can update both the children and the parent key
     /// in one pass.  Called immediately after `fetch_subtree_children` returns `Some`.
     ///
     /// Returns `None` (default) to leave the parent key unchanged.
-    fn fetch_subtree_parent_key(&mut self) -> Option<String> { None }
+    fn fetch_subtree_parent_key(&mut self) -> Option<String> {
+        None
+    }
 
     /// Sync the provider's internal compose-body state from the current FFON body children.
     ///
@@ -469,8 +554,12 @@ impl GenericProvider {
 }
 
 impl Provider for GenericProvider {
-    fn name(&self) -> &str { &self.name }
-    fn display_name(&self) -> String { self.display_name.clone() }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn display_name(&self) -> String {
+        self.display_name.clone()
+    }
 
     fn fetch(&mut self) -> Vec<FfonElement> {
         (self.fetch_fn)(&self.current_path)
@@ -495,13 +584,17 @@ impl Provider for GenericProvider {
         }
     }
 
-    fn current_path(&self) -> &str { &self.current_path }
+    fn current_path(&self) -> &str {
+        &self.current_path
+    }
 
     fn set_current_path(&mut self, path: &str) {
         self.current_path = path.to_owned();
     }
 
-    fn take_error(&mut self) -> Option<String> { self.error.take() }
+    fn take_error(&mut self) -> Option<String> {
+        self.error.take()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -536,7 +629,10 @@ pub fn register_provider_factory(
     name: &str,
     factory: impl Fn() -> Box<dyn Provider> + Send + Sync + 'static,
 ) {
-    registry().lock().unwrap().push((name.to_owned(), Box::new(factory)));
+    registry()
+        .lock()
+        .unwrap()
+        .push((name.to_owned(), Box::new(factory)));
 }
 
 #[cfg(feature = "host")]
@@ -561,28 +657,47 @@ mod tests {
 
     impl SimpleProvider {
         fn new(name: &str) -> Self {
-            SimpleProvider { name: name.to_owned(), path: "/".to_owned(), error: None }
+            SimpleProvider {
+                name: name.to_owned(),
+                path: "/".to_owned(),
+                error: None,
+            }
         }
     }
 
     impl Provider for SimpleProvider {
-        fn name(&self) -> &str { &self.name }
+        fn name(&self) -> &str {
+            &self.name
+        }
         fn fetch(&mut self) -> Vec<FfonElement> {
             vec![FfonElement::new_str("item")]
         }
         fn push_path(&mut self, seg: &str) {
-            if self.path == "/" { self.path = format!("/{seg}"); }
-            else { self.path.push('/'); self.path.push_str(seg); }
+            if self.path == "/" {
+                self.path = format!("/{seg}");
+            } else {
+                self.path.push('/');
+                self.path.push_str(seg);
+            }
         }
         fn pop_path(&mut self) {
             if let Some(slash) = self.path.rfind('/') {
-                if slash == 0 { self.path = "/".to_owned(); }
-                else { self.path.truncate(slash); }
+                if slash == 0 {
+                    self.path = "/".to_owned();
+                } else {
+                    self.path.truncate(slash);
+                }
             }
         }
-        fn current_path(&self) -> &str { &self.path }
-        fn set_current_path(&mut self, p: &str) { self.path = p.to_owned(); }
-        fn take_error(&mut self) -> Option<String> { self.error.take() }
+        fn current_path(&self) -> &str {
+            &self.path
+        }
+        fn set_current_path(&mut self, p: &str) {
+            self.path = p.to_owned();
+        }
+        fn take_error(&mut self) -> Option<String> {
+            self.error.take()
+        }
     }
 
     #[test]
@@ -723,9 +838,9 @@ mod tests {
     }
 
     #[test]
-    fn test_provider_collect_deep_search_default_none() {
+    fn test_provider_collect_extended_search_default_none() {
         let p = SimpleProvider::new("t");
-        assert!(p.collect_deep_search_items().is_none());
+        assert!(p.collect_extended_search_items().is_none());
     }
 
     #[test]
@@ -739,18 +854,15 @@ mod tests {
 
     #[test]
     fn test_generic_provider_fetch() {
-        let mut p = GenericProvider::new("test", "Test", |_path| {
-            vec![FfonElement::new_str("hello")]
-        });
+        let mut p =
+            GenericProvider::new("test", "Test", |_path| vec![FfonElement::new_str("hello")]);
         let elems = p.fetch();
         assert_eq!(elems.len(), 1);
     }
 
     #[test]
     fn test_generic_provider_path_management() {
-        let mut p = GenericProvider::new("test", "Test", |path| {
-            vec![FfonElement::new_str(path)]
-        });
+        let mut p = GenericProvider::new("test", "Test", |path| vec![FfonElement::new_str(path)]);
         p.push_path("dir");
         assert_eq!(p.current_path(), "/dir");
         let elems = p.fetch();

@@ -108,8 +108,7 @@ fn network_is_a_separate_interface_from_the_always_linked_host() {
     let mut by_iface: Vec<(String, BTreeSet<String>)> = Vec::new();
     for id in world_interfaces(&resolve, world, false) {
         let name = resolve.interfaces[id].name.clone().unwrap_or_default();
-        let funcs: BTreeSet<String> =
-            resolve.interfaces[id].functions.keys().cloned().collect();
+        let funcs: BTreeSet<String> = resolve.interfaces[id].functions.keys().cloned().collect();
         by_iface.push((name, funcs));
     }
 
@@ -126,7 +125,10 @@ fn network_is_a_separate_interface_from_the_always_linked_host() {
 
     assert_eq!(
         net,
-        ["fetch", "fetch-url-ffon"].iter().map(|s| s.to_string()).collect::<BTreeSet<_>>(),
+        ["fetch", "fetch-url-ffon"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<BTreeSet<_>>(),
         "`net` must hold exactly the network egress"
     );
 
@@ -230,7 +232,7 @@ fn provider_exports_cover_the_expected_surface() {
         "on-checkbox-change",
         "set-input-value",
         "on-setting-change",
-        "collect-deep-search-items",
+        "collect-extended-search-items",
         "load-config",
         "save-config",
         "fetch-subtree-children",
@@ -339,5 +341,8 @@ fn binary_codec_round_trips_the_wire_format() {
     // A single element crosses as a one-element list, so there is exactly one codec
     // for both shapes.
     let single = vec![FfonElement::new_str("only")];
-    assert_eq!(ffon::deserialize_binary(&ffon::serialize_binary(&single)), single);
+    assert_eq!(
+        ffon::deserialize_binary(&ffon::serialize_binary(&single)),
+        single
+    );
 }

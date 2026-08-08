@@ -18,7 +18,8 @@ fn find_unescaped(haystack: &str, needle: &str) -> Option<usize> {
     }
     let mut start = 0;
     while start + needle_bytes.len() <= bytes.len() {
-        if let Some(rel) = bytes[start..].windows(needle_bytes.len())
+        if let Some(rel) = bytes[start..]
+            .windows(needle_bytes.len())
             .position(|w| w == needle_bytes)
         {
             let abs = start + rel;
@@ -66,7 +67,8 @@ fn extract_between<'a>(text: &'a str, open: &str, open_len: usize, close: &str) 
 fn extract_after<'a>(text: &'a str, open: &str, open_len: usize, close: &str) -> Option<&'a str> {
     let start_pos = find_unescaped(text, open)?;
     let content_start = start_pos + open_len;
-    let end = text[content_start..].find(close)
+    let end = text[content_start..]
+        .find(close)
         .map(|p| content_start + p)
         .unwrap_or(text.len());
     Some(&text[content_start..end])
@@ -114,8 +116,7 @@ const ONE_OPT_TAG: &str = "<one-opt></one-opt>";
 
 /// Returns true if `text` contains `<input>...</input>`.
 pub fn has_input(text: &str) -> bool {
-    find_unescaped(text, INPUT_OPEN).is_some()
-        && find_unescaped(text, INPUT_CLOSE).is_some()
+    find_unescaped(text, INPUT_OPEN).is_some() && find_unescaped(text, INPUT_CLOSE).is_some()
 }
 
 /// Extracts content between `<input>` and `</input>`.
@@ -140,8 +141,7 @@ pub fn format_input(content: &str) -> String {
 
 /// Returns true if `text` contains `<password>...</password>`.
 pub fn has_password(text: &str) -> bool {
-    find_unescaped(text, PASSWORD_OPEN).is_some()
-        && find_unescaped(text, PASSWORD_CLOSE).is_some()
+    find_unescaped(text, PASSWORD_OPEN).is_some() && find_unescaped(text, PASSWORD_CLOSE).is_some()
 }
 
 /// Extracts content between `<password>` and `</password>`.
@@ -207,8 +207,13 @@ pub fn extract_checkbox(text: &str) -> Option<String> {
 }
 
 pub fn extract_checkbox_checked(text: &str) -> Option<String> {
-    extract_after(text, CHECKBOX_CHECKED_OPEN, CHECKBOX_CHECKED_OPEN.len(), CHECKBOX_CLOSE)
-        .map(|s| s.to_owned())
+    extract_after(
+        text,
+        CHECKBOX_CHECKED_OPEN,
+        CHECKBOX_CHECKED_OPEN.len(),
+        CHECKBOX_CLOSE,
+    )
+    .map(|s| s.to_owned())
 }
 
 pub fn format_checkbox(content: &str) -> String {
@@ -224,8 +229,7 @@ pub fn format_checkbox_checked(content: &str) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn has_link(text: &str) -> bool {
-    find_unescaped(text, LINK_OPEN).is_some()
-        && find_unescaped(text, LINK_CLOSE).is_some()
+    find_unescaped(text, LINK_OPEN).is_some() && find_unescaped(text, LINK_CLOSE).is_some()
 }
 
 pub fn extract_link(text: &str) -> Option<String> {
@@ -237,8 +241,7 @@ pub fn extract_link(text: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 pub fn has_image(text: &str) -> bool {
-    find_unescaped(text, IMAGE_OPEN).is_some()
-        && find_unescaped(text, IMAGE_CLOSE).is_some()
+    find_unescaped(text, IMAGE_OPEN).is_some() && find_unescaped(text, IMAGE_CLOSE).is_some()
 }
 
 pub fn extract_image(text: &str) -> Option<String> {
@@ -251,8 +254,7 @@ pub fn extract_image(text: &str) -> Option<String> {
 
 /// Returns true if `text` contains `<id>...</id>` (HTML element id metadata).
 pub fn has_id(text: &str) -> bool {
-    find_unescaped(text, ID_OPEN).is_some()
-        && find_unescaped(text, ID_CLOSE).is_some()
+    find_unescaped(text, ID_OPEN).is_some() && find_unescaped(text, ID_CLOSE).is_some()
 }
 
 /// Extracts the id value between `<id>` and `</id>`.
@@ -347,8 +349,7 @@ pub fn format_one_opt(key: &str) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn has_button(text: &str) -> bool {
-    find_unescaped(text, BUTTON_OPEN).is_some()
-        && find_unescaped(text, BUTTON_CLOSE).is_some()
+    find_unescaped(text, BUTTON_OPEN).is_some() && find_unescaped(text, BUTTON_CLOSE).is_some()
 }
 
 pub fn extract_button_function_name(text: &str) -> Option<String> {
@@ -420,7 +421,8 @@ pub fn strip_display(text: &str) -> String {
     if let Some(open_pos) = find_unescaped(text, ID_OPEN) {
         let before = &text[..open_pos];
         let after_open = &text[open_pos + ID_OPEN.len()..];
-        let after = after_open.find(ID_CLOSE)
+        let after = after_open
+            .find(ID_CLOSE)
             .map(|p| &after_open[p + ID_CLOSE.len()..])
             .unwrap_or("");
         let result = format!("{before}{after}");
@@ -429,14 +431,18 @@ pub fn strip_display(text: &str) -> String {
 
     // 5. Find the first recognized tag pair and strip it
     let candidates: &[(&str, usize, &str)] = &[
-        (INPUT_OPEN,             INPUT_OPEN.len(),             INPUT_CLOSE),
-        (PASSWORD_OPEN,          PASSWORD_OPEN.len(),          PASSWORD_CLOSE),
-        (RADIO_OPEN,             RADIO_OPEN.len(),             RADIO_CLOSE),
-        (CHECKED_OPEN,           CHECKED_OPEN.len(),           CHECKED_CLOSE),
-        (CHECKBOX_CHECKED_OPEN,  CHECKBOX_CHECKED_OPEN.len(),  CHECKBOX_CLOSE),
-        (CHECKBOX_OPEN,          CHECKBOX_OPEN.len(),          CHECKBOX_CLOSE),
-        (LINK_OPEN,              LINK_OPEN.len(),              LINK_CLOSE),
-        (IMAGE_OPEN,             IMAGE_OPEN.len(),             IMAGE_CLOSE),
+        (INPUT_OPEN, INPUT_OPEN.len(), INPUT_CLOSE),
+        (PASSWORD_OPEN, PASSWORD_OPEN.len(), PASSWORD_CLOSE),
+        (RADIO_OPEN, RADIO_OPEN.len(), RADIO_CLOSE),
+        (CHECKED_OPEN, CHECKED_OPEN.len(), CHECKED_CLOSE),
+        (
+            CHECKBOX_CHECKED_OPEN,
+            CHECKBOX_CHECKED_OPEN.len(),
+            CHECKBOX_CLOSE,
+        ),
+        (CHECKBOX_OPEN, CHECKBOX_OPEN.len(), CHECKBOX_CLOSE),
+        (LINK_OPEN, LINK_OPEN.len(), LINK_CLOSE),
+        (IMAGE_OPEN, IMAGE_OPEN.len(), IMAGE_CLOSE),
     ];
 
     for &(open, open_len, close) in candidates {
@@ -529,7 +535,10 @@ mod tests {
 
     #[test]
     fn test_extract_input_basic() {
-        assert_eq!(extract_input("<input>hello</input>"), Some("hello".to_owned()));
+        assert_eq!(
+            extract_input("<input>hello</input>"),
+            Some("hello".to_owned())
+        );
     }
 
     #[test]
@@ -577,7 +586,10 @@ mod tests {
 
     #[test]
     fn test_extract_password_basic() {
-        assert_eq!(extract_password("<password>secret</password>").as_deref(), Some("secret"));
+        assert_eq!(
+            extract_password("<password>secret</password>").as_deref(),
+            Some("secret")
+        );
     }
 
     #[test]
@@ -598,7 +610,10 @@ mod tests {
         // strip_display is NOT where masking happens — it returns the real value
         // so the editable buffer round-trips.
         assert_eq!(strip_display("<password>secret</password>"), "secret");
-        assert_eq!(strip_display("API key: <password>abc</password>"), "API key: abc");
+        assert_eq!(
+            strip_display("API key: <password>abc</password>"),
+            "API key: abc"
+        );
     }
 
     #[test]
@@ -623,7 +638,10 @@ mod tests {
 
     #[test]
     fn test_extract_radio_with_close() {
-        assert_eq!(extract_radio("<radio>color</radio>"), Some("color".to_owned()));
+        assert_eq!(
+            extract_radio("<radio>color</radio>"),
+            Some("color".to_owned())
+        );
     }
 
     #[test]
@@ -685,7 +703,10 @@ mod tests {
 
     #[test]
     fn test_extract_checkbox_no_close() {
-        assert_eq!(extract_checkbox("<checkbox>my label"), Some("my label".to_owned()));
+        assert_eq!(
+            extract_checkbox("<checkbox>my label"),
+            Some("my label".to_owned())
+        );
     }
 
     #[test]
@@ -846,7 +867,10 @@ mod tests {
 
     #[test]
     fn test_strip_display_input_with_prefix_suffix() {
-        assert_eq!(strip_display("Label: <input>val</input> (hint)"), "Label: val (hint)");
+        assert_eq!(
+            strip_display("Label: <input>val</input> (hint)"),
+            "Label: val (hint)"
+        );
     }
 
     #[test]
@@ -871,7 +895,10 @@ mod tests {
 
     #[test]
     fn test_strip_display_link() {
-        assert_eq!(strip_display("<link>https://example.com</link>"), "https://example.com");
+        assert_eq!(
+            strip_display("<link>https://example.com</link>"),
+            "https://example.com"
+        );
     }
 
     #[test]
@@ -886,7 +913,10 @@ mod tests {
 
     #[test]
     fn test_strip_display_button_with_prefix() {
-        assert_eq!(strip_display("Add: <button>fn</button>Click me"), "Add: Click me");
+        assert_eq!(
+            strip_display("Add: <button>fn</button>Click me"),
+            "Add: Click me"
+        );
     }
 
     #[test]
@@ -894,7 +924,9 @@ mod tests {
         // Button display text itself contains <input> tags — should be stripped recursively.
         // Mirrors the sales demo case: one-opt key like "max pressure: <input>100</input> Pa"
         assert_eq!(
-            strip_display("<button>one-opt:max pressure: <input>100</input> Pa</button>max pressure: <input>100</input> Pa"),
+            strip_display(
+                "<button>one-opt:max pressure: <input>100</input> Pa</button>max pressure: <input>100</input> Pa"
+            ),
             "max pressure: 100 Pa"
         );
     }
@@ -920,7 +952,10 @@ mod tests {
 
     #[test]
     fn test_strip_display_unescape() {
-        assert_eq!(strip_display("text with \\<brackets\\>"), "text with <brackets>");
+        assert_eq!(
+            strip_display("text with \\<brackets\\>"),
+            "text with <brackets>"
+        );
     }
 
     #[test]
@@ -971,7 +1006,10 @@ mod tests {
 
     #[test]
     fn test_extract_checked_with_close() {
-        assert_eq!(extract_checked("<checked>dark</checked>"), Some("dark".to_owned()));
+        assert_eq!(
+            extract_checked("<checked>dark</checked>"),
+            Some("dark".to_owned())
+        );
     }
 
     #[test]
@@ -1179,7 +1217,10 @@ mod tests {
 
     #[test]
     fn test_strip_display_input_with_src_inside() {
-        assert_eq!(strip_display("<input><src=42>line text</input>"), "line text");
+        assert_eq!(
+            strip_display("<input><src=42>line text</input>"),
+            "line text"
+        );
     }
 
     #[test]
@@ -1252,7 +1293,10 @@ mod tests {
 
     #[test]
     fn test_extract_id() {
-        assert_eq!(extract_id("<id>page-main-content</id>Main"), Some("page-main-content".to_owned()));
+        assert_eq!(
+            extract_id("<id>page-main-content</id>Main"),
+            Some("page-main-content".to_owned())
+        );
     }
 
     #[test]
@@ -1268,7 +1312,10 @@ mod tests {
     #[test]
     fn test_strip_display_id_strips_tag_and_content() {
         // <id> content is metadata, not display text — must be stripped entirely
-        assert_eq!(strip_display("<id>page-main-content</id>Main heading"), "Main heading");
+        assert_eq!(
+            strip_display("<id>page-main-content</id>Main heading"),
+            "Main heading"
+        );
     }
 
     #[test]

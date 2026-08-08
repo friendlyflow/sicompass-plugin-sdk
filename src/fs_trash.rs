@@ -69,7 +69,12 @@ pub fn restore_trashed_tree(root: &Path, tree: &TrashedTree) -> std::io::Result<
 /// to surface alongside the manual-restore hint.
 #[cfg(any(
     target_os = "windows",
-    all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
 ))]
 pub fn restore_from_os_trash(original: &Path) -> Result<(), String> {
     if original.exists() {
@@ -88,7 +93,12 @@ pub fn restore_from_os_trash(original: &Path) -> Result<(), String> {
 /// Platforms without `trash::os_limited` (macOS) cannot restore programmatically.
 #[cfg(not(any(
     target_os = "windows",
-    all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
 )))]
 pub fn restore_from_os_trash(_original: &Path) -> Result<(), String> {
     Err("automatic OS-trash restore is unsupported on this platform".to_owned())
@@ -135,7 +145,10 @@ pub fn snapshot_for_delete(full: &Path) -> FsSideEffect {
 /// human-readable reason into `error` if the restore fails.
 pub fn restore_side_effect(side_effect: &FsSideEffect, error: &mut String) {
     match side_effect {
-        FsSideEffect::TrashedFile { original_path, content_snapshot } => {
+        FsSideEffect::TrashedFile {
+            original_path,
+            content_snapshot,
+        } => {
             if let Some(parent) = original_path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
@@ -143,7 +156,10 @@ pub fn restore_side_effect(side_effect: &FsSideEffect, error: &mut String) {
                 *error = format!("undo delete: write failed: {e}");
             }
         }
-        FsSideEffect::TrashedDir { original_path, content_tree } => {
+        FsSideEffect::TrashedDir {
+            original_path,
+            content_tree,
+        } => {
             if let Err(e) = restore_trashed_tree(original_path, content_tree) {
                 *error = format!("undo delete: dir restore failed: {e}");
             }
@@ -175,7 +191,9 @@ mod tests {
         let file = tmp.path().join("a.txt");
         std::fs::write(&file, b"hello").unwrap();
         match snapshot_for_delete(&file) {
-            FsSideEffect::TrashedFile { content_snapshot, .. } => {
+            FsSideEffect::TrashedFile {
+                content_snapshot, ..
+            } => {
                 assert_eq!(content_snapshot, b"hello");
             }
             other => panic!("expected TrashedFile, got {other:?}"),
@@ -189,7 +207,10 @@ mod tests {
         std::fs::create_dir(&dir).unwrap();
         std::fs::write(dir.join("inner.txt"), b"nested").unwrap();
         match snapshot_for_delete(&dir) {
-            FsSideEffect::TrashedDir { content_tree: TrashedTree::Dir(children), .. } => {
+            FsSideEffect::TrashedDir {
+                content_tree: TrashedTree::Dir(children),
+                ..
+            } => {
                 assert_eq!(children.len(), 1);
                 assert_eq!(children[0].0, "inner.txt");
             }

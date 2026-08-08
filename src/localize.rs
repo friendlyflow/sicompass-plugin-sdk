@@ -31,15 +31,19 @@ struct Localizer {
 
 impl Localizer {
     fn new() -> Self {
-        Self { bundles: HashMap::new(), active: FALLBACK_LOCALE.to_owned() }
+        Self {
+            bundles: HashMap::new(),
+            active: FALLBACK_LOCALE.to_owned(),
+        }
     }
 
     fn add_resource(&mut self, locale: &str, ftl: &str) -> Result<(), String> {
         let resource = FluentResource::try_new(ftl.to_owned())
             .map_err(|(_, errs)| format!("FTL parse errors in {locale}: {errs:?}"))?;
         let entry = self.bundles.entry(locale.to_owned()).or_insert_with(|| {
-            let langid: LanguageIdentifier =
-                locale.parse().unwrap_or_else(|_| FALLBACK_LOCALE.parse().unwrap());
+            let langid: LanguageIdentifier = locale
+                .parse()
+                .unwrap_or_else(|_| FALLBACK_LOCALE.parse().unwrap());
             let mut b = FluentBundle::new_concurrent(vec![langid]);
             // Suppress Unicode isolation marks (U+2068 / U+2069). They're
             // standard Fluent behavior for bidi safety but show up as
@@ -85,7 +89,10 @@ fn global() -> &'static RwLock<Localizer> {
 /// same locale append to that locale's bundle (so each provider crate can
 /// own its own messages). Returns Err on parse/conflict failure.
 pub fn register_bundle(locale: &str, ftl_source: &str) -> Result<(), String> {
-    global().write().expect("localizer poisoned").add_resource(locale, ftl_source)
+    global()
+        .write()
+        .expect("localizer poisoned")
+        .add_resource(locale, ftl_source)
 }
 
 /// Set the active locale. Subsequent [`t`] / [`t_args`] calls resolve here
@@ -99,8 +106,13 @@ pub fn current_locale() -> String {
 }
 
 pub fn available_locales() -> Vec<String> {
-    let mut v: Vec<String> =
-        global().read().expect("localizer poisoned").bundles.keys().cloned().collect();
+    let mut v: Vec<String> = global()
+        .read()
+        .expect("localizer poisoned")
+        .bundles
+        .keys()
+        .cloned()
+        .collect();
     v.sort();
     v
 }
@@ -109,12 +121,18 @@ pub fn available_locales() -> Vec<String> {
 /// then to the key itself. Use [`t_args`] for messages with `{ $param }`
 /// placeholders.
 pub fn t(key: &str) -> String {
-    global().read().expect("localizer poisoned").format(key, None)
+    global()
+        .read()
+        .expect("localizer poisoned")
+        .format(key, None)
 }
 
 /// Resolve a Fluent message key with named parameters (e.g. `{ $err }`).
 pub fn t_args(key: &str, args: &FluentArgs) -> String {
-    global().read().expect("localizer poisoned").format(key, Some(args))
+    global()
+        .read()
+        .expect("localizer poisoned")
+        .format(key, Some(args))
 }
 
 // ---------------------------------------------------------------------------
@@ -130,7 +148,9 @@ mod tests {
     // race on `active` or stomp each other's bundles.
     fn test_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner())
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     fn reset() {

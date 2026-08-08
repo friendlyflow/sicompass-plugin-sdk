@@ -359,10 +359,10 @@ pub trait Plugin: Sized + 'static {
         Ok(())
     }
 
-    // ---- Deep search -------------------------------------------------------
+    // ---- Extended search ---------------------------------------------------
 
     /// Items for Ctrl+F. `None` lets the host walk the FFON tree instead.
-    fn collect_deep_search_items(&self) -> Option<Vec<SearchResult>> {
+    fn collect_extended_search_items(&self) -> Option<Vec<SearchResult>> {
         None
     }
 
@@ -609,9 +609,9 @@ macro_rules! export_plugin {
                     __with(|p| $crate::Plugin::redo(p, &entry))
                 }
 
-                fn collect_deep_search_items()
+                fn collect_extended_search_items()
                 -> ::std::option::Option<::std::vec::Vec<$crate::SearchResult>> {
-                    __with(|p| $crate::Plugin::collect_deep_search_items(p))
+                    __with(|p| $crate::Plugin::collect_extended_search_items(p))
                 }
 
                 fn load_config(contents: ::std::vec::Vec<u8>) -> bool {
