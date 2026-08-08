@@ -87,7 +87,7 @@ fi
 # interface. `net` is the conditionally-linked one: importing from it means this
 # plugin's plugin.json must declare a non-empty allowedHosts, or the host will
 # refuse to instantiate it.
-ALWAYS="log get-setting now-millis translate"
+ALWAYS="log get-setting now-millis translate read-asset"
 NETWORK="fetch fetch-url-ffon"
 USES_NET=0
 while read -r module func; do

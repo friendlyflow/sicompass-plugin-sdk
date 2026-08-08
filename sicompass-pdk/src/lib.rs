@@ -38,12 +38,26 @@
 //! A WASM guest has no syscalls, so its whole ability to affect the world is the
 //! set of functions the host links in. Those live in [`host`], and that is the
 //! entire list: `fetch`, `fetch_url_ffon`, `log`, `get_setting`, `now_millis`,
-//! `translate`.
+//! `translate`, `read_asset`.
 //!
 //! `std::fs`, `std::net`, `std::process` and `SystemTime::now` all *compile* for
 //! `wasm32-unknown-unknown` and then fail at runtime. That is not an oversight to
 //! route around: use [`host::fetch`] for network, [`Plugin::load_config`] and
-//! [`Plugin::save_config`] for persistence, [`host::now_millis`] for the clock.
+//! [`Plugin::save_config`] for persistence, [`host::now_millis`] for the clock,
+//! and [`host::read_asset`] for your own data files.
+//!
+//! # Shipping your own files
+//!
+//! Put them in `assets/` next to your `plugin.json`. Then:
+//!
+//! - to read one yourself, [`host::read_asset`]`("equipment.json")`;
+//! - to have the *host* render an image, name it with [`assets::uri`] — put
+//!   `asset:<plugin-name>/<file>` in an `<image>` or `<link>` tag, or return it from
+//!   [`Plugin::dashboard_image_path`]. The host resolves it, so the bytes never pass
+//!   through guest memory and nothing is decoded in the guest.
+//!
+//! Both are confined to that `assets/` directory. There is no way to name a path
+//! outside it, and no way to name another plugin's assets.
 //!
 //! [`host::fetch`] is linked only when your `plugin.json` declares a non-empty
 //! `allowedHosts`. Omit it and a component that references `fetch` fails to
@@ -66,7 +80,9 @@ pub mod bindings {
 // ---------------------------------------------------------------------------
 
 /// Host functions that are always available: `log`, `get_setting`, `now_millis`,
-/// `translate`. None of them grants ambient authority.
+/// `translate`, `read_asset`. None of them grants ambient authority — `read_asset`
+/// reaches only files under `assets/` in your own install directory, i.e. bytes you
+/// shipped yourself.
 pub mod host {
     pub use crate::bindings::sicompass::plugin::host::*;
 }
@@ -90,6 +106,11 @@ pub use bindings::sicompass::plugin::types::{
     Cell, CellAttrs, DashboardKind, DashboardRequest, Descriptor, Frame, Key, Keysym, ListItem,
     NavigationRequest, PollResult, ProviderOp, SearchResult,
 };
+
+/// Naming your own assets: `assets::uri("my-plugin", "logo.png")` builds the
+/// `asset:` string an `<image>`/`<link>` tag or [`Plugin::dashboard_image_path`]
+/// should carry. Only the naming half is here — resolving is the host's job.
+pub use sicompass_sdk::assets;
 
 /// The FFON data model, re-exported so a plugin needs one dependency, not two.
 pub use sicompass_sdk::ffon;

@@ -86,6 +86,26 @@ impl Plugin for Hello {
             section.push(FfonElement::new_str(format!("configured greetee: {who}")));
         }
 
+        // `read_asset` three ways, so the host's confinement can be tested against a
+        // real guest rather than a mock. The first reads a file this plugin ships in
+        // its own `assets/` directory; the other two must come back `none`, and the
+        // guest cannot tell "refused" from "absent" — that is deliberate, so this
+        // cannot be turned into a probe for what exists on the host.
+        section.push(FfonElement::new_str(match host::read_asset("hello-asset.txt") {
+            Some(bytes) => format!("asset bytes: {}", bytes.len()),
+            None => "asset bytes: refused".to_owned(),
+        }));
+        section.push(FfonElement::new_str(
+            match host::read_asset("../../Cargo.toml") {
+                Some(_) => "escape: LEAKED",
+                None => "escape: refused",
+            },
+        ));
+        section.push(FfonElement::new_str(match host::read_asset("no-such-file") {
+            Some(_) => "missing: LEAKED",
+            None => "missing: refused",
+        }));
+
         vec![FfonElement::Obj(section)]
     }
 

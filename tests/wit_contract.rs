@@ -85,6 +85,9 @@ fn host_imports_are_exactly_the_capability_set() {
         "get-setting",
         "now-millis",
         "translate",
+        // Reads only files under `assets/` in the plugin's own install directory,
+        // i.e. bytes the plugin shipped itself. No ambient filesystem.
+        "read-asset",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -139,7 +142,13 @@ fn network_is_a_separate_interface_from_the_always_linked_host() {
              `net`, the conditionally-linked interface"
         );
     }
-    for always in ["log", "get-setting", "now-millis", "translate"] {
+    for always in [
+        "log",
+        "get-setting",
+        "now-millis",
+        "translate",
+        "read-asset",
+    ] {
         assert!(host.contains(always), "`host` should provide `{always}`");
     }
 }

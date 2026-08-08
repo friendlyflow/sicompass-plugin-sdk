@@ -6,7 +6,7 @@
 
 [package]
 name = "sicompass-pdk"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "Sicompass plugin development kit — build sandboxed WASM providers in Rust"
@@ -27,8 +27,10 @@ crate-type = ["cdylib", "rlib"]
 # trash, host config paths, the process-global registries, the tokio bridge) and
 # leaves the portable data model: FFON with its binary codec, tags, timeline
 # records, dashboard types.
-# 0.3.0 is a hard floor: it introduced the `host` feature. Against 0.2.x
-# `default-features = false` is a no-op — that version has no features at all — so
-# the guest would drag in `trash` and `tokio`, neither of which builds for wasm.
-sicompass-sdk = { version = "0.3.0", path = "..", default-features = false }
+# 0.4.0 is a hard floor: it added the `read-asset` host import and the portable
+# `assets` URI helpers this crate re-exports. (0.3.0 was the previous floor, for the
+# `host` feature itself: against 0.2.x `default-features = false` is a no-op — that
+# version has no features at all — so the guest would drag in `trash` and `tokio`,
+# neither of which builds for wasm.)
+sicompass-sdk = { version = "0.4.0", path = "..", default-features = false }
 wit-bindgen = "0.60.0"

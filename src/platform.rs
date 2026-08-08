@@ -590,7 +590,7 @@ pub fn ensure_bun_on_path() {
 }
 
 // ---------------------------------------------------------------------------
-// Repository-relative asset resolution
+// Repository-relative asset resolution (superseded by `crate::assets`)
 // ---------------------------------------------------------------------------
 
 /// Resolve a repo-relative asset path to an absolute one.
@@ -603,6 +603,17 @@ pub fn ensure_bun_on_path() {
 ///
 /// Returns the first existing candidate, or the manifest-anchored path as a
 /// last resort so that error messages point somewhere meaningful.
+///
+/// Candidate 1 is anchored on *this crate's* `CARGO_MANIFEST_DIR`, which on an
+/// end-user machine points into `~/.cargo/registry` — the flaw that made the
+/// whole approach need a `set_current_dir` in the app to make candidate 4 land.
+#[deprecated(
+    since = "0.4.0",
+    note = "assets belong to the crate that owns them: `include_bytes!` them out of \
+            your own `assets/` directory, publish them with `assets::register_bytes`, \
+            and name them with an `asset:` URI. There is no runtime asset tree to \
+            resolve against any more."
+)]
 pub fn resolve_repo_asset(rel: &str) -> std::path::PathBuf {
     let from_manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")

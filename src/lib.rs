@@ -5,7 +5,8 @@
 //! - **Host** (`default`): everything. The sicompass app and the built-in `lib_*`
 //!   provider crates use this and are unaffected by the split.
 //! - **Guest** (`default-features = false`): the portable data model only — FFON,
-//!   tags, timeline records, dashboard types and the `Provider` trait. Builds for
+//!   tags, timeline records, dashboard types, asset URIs and the `Provider` trait.
+//!   Builds for
 //!   `wasm32-unknown-unknown`. A sandboxed WASM plugin gets host services through
 //!   imported functions rather than by linking them, so the modules that reach the
 //!   OS or rely on process-global state are absent by construction.
@@ -26,6 +27,9 @@ pub const WIT_SOURCE: &str = include_str!("../wit/sicompass-plugin.wit");
 // Portable — available to host and guest alike
 // ---------------------------------------------------------------------------
 
+// Naming an asset is portable (a guest names its own files the same way); the
+// byte registry inside is host-only, gated within the module.
+pub mod assets;
 pub mod dashboard;
 pub mod ffon;
 pub mod placeholders;
@@ -183,6 +187,12 @@ mod feature_split_tests {
             NavigationRequest::EnterChildren,
             NavigationRequest::EnterChildren
         );
+
+        // Asset naming. A guest has to be able to build and read back the URI it
+        // puts in an `<image>` tag; only the byte registry is host-only.
+        let u = assets::uri("p", "f.png");
+        assert!(assets::is_uri(&u));
+        assert_eq!(assets::parse_uri(&u), Some(("p", "f.png")));
     }
 
     /// The host half must stay *absent* without the feature, not merely unused —
@@ -194,6 +204,7 @@ mod feature_split_tests {
         assert!(create_provider_by_name("__nonexistent__").is_none());
         assert_eq!(block_on(async { 7 }), 7);
         assert!(TRASH_SNAPSHOT_LIMIT_BYTES > 0);
+        assert!(assets::resolve("asset:__nonexistent__/x").is_none());
         // No assertion on the value: the `OnceLock` may already hold a fetcher
         // installed by another test in this binary. Reaching it at all is the point.
         let _ = fetch_url_to_ffon("https://example.com");
