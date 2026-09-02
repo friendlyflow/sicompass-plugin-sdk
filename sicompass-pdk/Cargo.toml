@@ -6,7 +6,7 @@
 
 [package]
 name = "sicompass-pdk"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "Sicompass plugin development kit — build sandboxed WASM providers in Rust"
@@ -32,5 +32,5 @@ crate-type = ["cdylib", "rlib"]
 # `host` feature itself: against 0.2.x `default-features = false` is a no-op — that
 # version has no features at all — so the guest would drag in `trash` and `tokio`,
 # neither of which builds for wasm.)
-sicompass-sdk = { version = "0.4.0", path = "..", default-features = false }
+sicompass-sdk = { version = "0.5.0", path = "..", default-features = false }
 wit-bindgen = "0.60.0"
