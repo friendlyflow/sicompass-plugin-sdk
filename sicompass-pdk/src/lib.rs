@@ -157,6 +157,7 @@ impl Default for Descriptor {
             path_is_filesystem: false,
             stable_root_key: false,
             has_editor_semantics: false,
+            supports_structural_edit: false,
             manual_dashboard_entry_allowed: true,
             dashboard_kind: DashboardKind::None,
         }
@@ -809,6 +810,7 @@ mod tests {
         assert!(d.manual_dashboard_entry_allowed);
         assert_eq!(d.dashboard_kind, DashboardKind::None);
         assert!(!d.supports_config_files);
+        assert!(!d.supports_structural_edit);
     }
 
     #[test]

@@ -97,6 +97,43 @@ pub fn state_home() -> Option<PathBuf> {
     }
 }
 
+/// Per-user **data** directory: where content the user created and owns lives.
+///
+/// Deliberately not [`state_home`]. On macOS that resolves to `~/Library/Logs`,
+/// which is right for the recall histories it was written for and wrong for
+/// documents: the OS and every cleanup tool treat a log directory as
+/// disposable. Documents belong in Application Support.
+///
+/// - Linux: `$XDG_DATA_HOME`, else `~/.local/share`
+/// - macOS: `~/Library/Application Support`
+/// - Windows: `%APPDATA%`
+///
+/// `None` when there is no usable home directory. A caller must treat that as
+/// "nowhere to save", never as "an empty store".
+pub fn data_home() -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+            if !xdg.is_empty() {
+                return Some(PathBuf::from(xdg));
+            }
+        }
+        home_dir().map(|h| h.join(".local").join("share"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        home_dir().map(|h| h.join("Library").join("Application Support"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("APPDATA").ok().map(PathBuf::from)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        home_dir().map(|h| h.join(".local").join("share"))
+    }
+}
+
 /// Returns `~/.local/state/sicompass/` (or platform equivalent) for log files.
 pub fn log_dir() -> Option<PathBuf> {
     state_home().map(|s| s.join("sicompass"))

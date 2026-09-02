@@ -319,6 +319,39 @@ pub trait Provider: Send + 'static {
         false
     }
 
+    /// Opt in to the generic structural-edit keymap: Ctrl+I / Ctrl+A insert a
+    /// row, Ctrl+D / Delete remove one, and Ctrl+X / Ctrl+C / Ctrl+V cut, copy
+    /// and paste one.
+    ///
+    /// The app owns the mutation. It edits its own FFON tree, records a
+    /// [`TimelineEntry::Structural`] so ctrl-Z reverses it, and then hands the
+    /// resulting children back through
+    /// [`Provider::sync_ffon_body_children`] — which is where a provider that
+    /// persists anything does its writing. The path the children belong to is
+    /// the provider's own `current_path()`, which the app sets before every
+    /// such call, including during undo and redo.
+    ///
+    /// Two provider methods keep their veto: [`Provider::delete_item`] is asked
+    /// before a row is removed and returning `false` cancels it, and
+    /// [`Provider::commit_edit`] is asked before typed text is accepted.
+    ///
+    /// Distinct from [`Provider::has_editor_semantics`], which is a stronger
+    /// claim: an editor also maps Enter to Append and suppresses the meta and
+    /// scroll screens. A tree provider wants Enter to open a row instead.
+    ///
+    /// **The answer may depend on where the cursor is.** It is asked of `&self`
+    /// and the provider knows its own `current_path()`, so a provider whose
+    /// tree is editable in one place and fixed in another — a mail client where
+    /// only the compose body takes rows, a form where only one section grows —
+    /// answers per level rather than once for the whole provider. That is what
+    /// lets a single flag replace the shape and path checks the app used to
+    /// hard-code.
+    ///
+    /// Default `false`.
+    fn supports_structural_edit(&self) -> bool {
+        false
+    }
+
     // ---- Optional: persistent config ---------------------------------------
 
     fn load_config(&mut self, _path: &Path) -> bool {
@@ -916,5 +949,14 @@ mod tests {
     fn default_has_editor_semantics_is_false() {
         let p = GenericProvider::new("p", "P", |_| vec![]);
         assert!(!p.has_editor_semantics());
+    }
+
+    /// Opting in has to be deliberate: the flag hands the host permission to
+    /// mutate a provider's tree from a keypress, so a provider that says
+    /// nothing must not get it.
+    #[test]
+    fn default_supports_structural_edit_is_false() {
+        let p = GenericProvider::new("p", "P", |_| vec![]);
+        assert!(!p.supports_structural_edit());
     }
 }
