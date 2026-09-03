@@ -67,8 +67,8 @@ pub mod url_fetcher;
 // ---------------------------------------------------------------------------
 
 pub use dashboard::{
-    CellAttrs, DashboardCell, DashboardFrame, DashboardKey, DashboardKeysym, DashboardKind,
-    DashboardRequest,
+    CellAttrs, DashboardCell, DashboardCursor, DashboardFrame, DashboardKey, DashboardKeysym,
+    DashboardKind, DashboardPalette, DashboardRequest, DashboardSelection,
 };
 pub use ffon::{FfonElement, FfonObject, IdArray};
 pub use placeholders::{

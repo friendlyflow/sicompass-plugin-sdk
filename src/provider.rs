@@ -1,4 +1,6 @@
-use crate::dashboard::{DashboardFrame, DashboardKey, DashboardKind, DashboardRequest};
+use crate::dashboard::{
+    DashboardFrame, DashboardKey, DashboardKind, DashboardPalette, DashboardRequest,
+};
 use crate::ffon::FfonElement;
 use crate::timeline::TimelineEntry;
 use std::path::Path;
@@ -20,7 +22,7 @@ pub struct ListItem {
 /// work finishes and leaving the cursor where it was would strand the user on
 /// a stale row — e.g. the web browser finishing a page load while the cursor
 /// still sits on the URL bar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NavigationRequest {
     /// Descend into the children of the element the cursor is on — the same
     /// move as pressing Right. Honoured only at the provider's own top level
@@ -29,6 +31,19 @@ pub enum NavigationRequest {
     /// the requesting provider, when it is on an element without a next layer,
     /// or while the user is in insert mode.
     EnterChildren,
+    /// Put the cursor on a specific element, named by its index at each level
+    /// **below the provider's own top level**: `[2, 5]` is the sixth child of the
+    /// third row `fetch()` returned.
+    ///
+    /// `EnterChildren` cannot express this — it descends onto the *first* child,
+    /// and there is no way to say which one. A provider with a second view of its
+    /// own tree needs it: leaving that view should put the list cursor on the
+    /// thing the user was just looking at, not near it.
+    ///
+    /// Indices are clamped to what each level actually holds, so a stale request
+    /// lands somewhere real rather than nowhere. Same gates as `EnterChildren`:
+    /// the active provider only, and never while the user is in insert mode.
+    SelectPath(Vec<usize>),
 }
 
 /// A result item from extended search (Ctrl+F).
@@ -424,6 +439,20 @@ pub trait Provider: Send + 'static {
     /// dashboard for this provider.
     fn enter_dashboard(&mut self) {}
 
+    /// Where the list cursor was when the dashboard was entered, as indices at
+    /// each level **below the provider's own top level** — the same shape
+    /// [`NavigationRequest::SelectPath`] uses, and its inbound counterpart.
+    ///
+    /// Called immediately before [`Provider::enter_dashboard`]. A provider that
+    /// shows a second view of its own tree needs it to open on what the user was
+    /// looking at: `current_path()` names the level they had descended into, but
+    /// nothing tells the provider *which row of it* the cursor is on, because
+    /// moving within a level never calls `push_path`.
+    ///
+    /// Host-side only, and absent from the WIT: it is a convenience for a
+    /// provider that keeps two views of one tree, not a capability.
+    fn set_dashboard_entry(&mut self, _path: &[usize]) {}
+
     /// Called once, immediately after the app exits the interactive
     /// dashboard for this provider (typically via Escape).
     fn leave_dashboard(&mut self) {}
@@ -437,6 +466,38 @@ pub trait Provider: Send + 'static {
     /// would have no clean manual exit path.
     fn manual_dashboard_entry_allowed(&self) -> bool {
         true
+    }
+
+    /// Hand the provider the app's active colour palette.
+    ///
+    /// Called before each `dashboard_render`, so a theme switch reaches the
+    /// dashboard on the next frame without the provider having to watch for one.
+    /// A provider that draws its own colours — a terminal emulator rendering SGR
+    /// attributes — ignores this; one drawing app-shaped furniture uses it so the
+    /// dashboard matches the list the user came from, in either theme.
+    ///
+    /// Host-side only, and absent from the WIT descriptor: it is a convenience,
+    /// not a capability, and the guest bridge has no reason to carry it.
+    fn set_dashboard_palette(&mut self, _palette: DashboardPalette) {}
+
+    /// Route Ctrl+Z / Ctrl+Y in this provider's interactive dashboard to the
+    /// app's timeline instead of forwarding them as keystrokes. Default `false`.
+    ///
+    /// Off by default because the terminal needs Ctrl+Z to reach the running
+    /// program as SIGTSTP, and a dashboard forwards every key verbatim.
+    ///
+    /// A provider that turns this on owns the other half of the contract: its
+    /// dashboard edits must be emitted as [`TimelineEntry`]s through
+    /// [`Provider::take_timeline_entries`], and it must implement
+    /// [`Provider::undo`] / [`Provider::redo`] for them. The app's own
+    /// `Structural` undo works by mutating the FFON tree, which a dashboard
+    /// edit never touches, so it cannot reverse one.
+    ///
+    /// Host-side only, and deliberately absent from the WIT descriptor: it
+    /// changes which keys a provider can intercept, and a sandboxed guest does
+    /// not get to make that choice. See `docs/wasm-plugins.md`.
+    fn dashboard_uses_app_undo(&self) -> bool {
+        false
     }
 
     /// Take any pending dashboard mode-switch request this provider has
@@ -518,6 +579,22 @@ pub trait Provider: Send + 'static {
 
     /// Take (consume) any pending error message.
     fn take_error(&mut self) -> Option<String> {
+        None
+    }
+
+    /// Take (consume) a line for the screen reader.
+    ///
+    /// Unlike [`Provider::take_error`] this is not a failure: it does not
+    /// colour the status line and it is not held across frames. Same two-call
+    /// semantics as the other `take_*` polls, and the app speaks only the
+    /// **active** provider's line, so a background provider cannot talk over
+    /// the view the user is reading.
+    ///
+    /// It exists for the interactive dashboard. There the provider owns its own
+    /// cursor and the app forwards every keystroke without interpreting it, so
+    /// this is the only way the app can learn that the focus moved and that
+    /// something needs saying.
+    fn take_announcement(&mut self) -> Option<String> {
         None
     }
 

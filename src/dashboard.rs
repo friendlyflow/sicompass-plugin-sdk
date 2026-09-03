@@ -70,6 +70,44 @@ impl Default for DashboardCell {
     }
 }
 
+/// A rectangle of cells the app should paint as a **selection**, the way it
+/// paints the selected row of a list: one rounded shape, slightly inset from the
+/// rows above and below.
+///
+/// It exists because a cell grid cannot express either half of that. Rounding is
+/// per-rectangle, so a multi-row selection drawn as one rectangle per row comes
+/// out as a stack of separate rounded blobs; and a cell is a whole row tall, so
+/// there is no way to leave a *part* of a row as breathing space around the
+/// highlight. Naming the region lets the app draw it once, as one shape.
+///
+/// Only one, and only where the provider means "this is the cursor". A dashboard
+/// that paints arbitrary coloured spans — a terminal emulator rendering SGR
+/// backgrounds — leaves this `None` and gets the plain per-cell fills, which is
+/// what those spans should look like.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DashboardSelection {
+    pub col: u16,
+    pub row: u16,
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// How the app should draw the frame's cursor.
+///
+/// A terminal's cursor is a filled cell, because that is what a terminal cursor
+/// is. A caret in a text field is not: the app draws its own insert-mode caret as
+/// a thin blinking bar between two characters, and a dashboard editing text
+/// should look like that rather than like a shell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DashboardCursor {
+    /// Fill the cell. What a terminal emulator wants.
+    #[default]
+    Block,
+    /// A thin blinking bar on the cell's leading edge, drawn the same way the
+    /// app draws its own insert-mode caret.
+    Bar,
+}
+
 /// A snapshot of the provider's terminal grid for one frame.
 ///
 /// `cells` is row-major with length `cols * rows`. `cursor` is `(col, row)`
@@ -80,9 +118,34 @@ pub struct DashboardFrame {
     pub rows: u16,
     pub cells: Vec<DashboardCell>,
     pub cursor: Option<(u16, u16)>,
+    /// The one region to paint as a selection, if any. See
+    /// [`DashboardSelection`].
+    pub selection: Option<DashboardSelection>,
+    /// Rows after which the app leaves **half a line height** of extra space.
+    ///
+    /// A cell is a whole row tall, so a provider that wants less air than a blank
+    /// row and more than none has no way to say so in the grid itself: a blank
+    /// row is a full line, and no row is nothing. This names the places where the
+    /// app should open a half-line instead, which it can do because it turns
+    /// rows into pixels.
+    ///
+    /// Everything below a gap shifts down by half a line, so the last part-row
+    /// may fall off the bottom — the same clipping a grid one row too short
+    /// already has. Empty for a provider that wants a plain grid.
+    pub half_gap_rows: Vec<u16>,
+    /// How to draw [`DashboardFrame::cursor`]. See [`DashboardCursor`].
+    pub cursor_style: DashboardCursor,
 }
 
 impl DashboardFrame {
+    /// How many half-lines of extra space sit above `row`.
+    ///
+    /// The app multiplies this by half a cell height to place the row; a provider
+    /// can use it to keep its own hit-testing in step.
+    pub fn half_gaps_above(&self, row: u16) -> u16 {
+        self.half_gap_rows.iter().filter(|r| **r < row).count() as u16
+    }
+
     /// A frame filled with the default cell (space, white-on-transparent).
     pub fn empty(cols: u16, rows: u16) -> Self {
         let len = (cols as usize) * (rows as usize);
@@ -91,6 +154,9 @@ impl DashboardFrame {
             rows,
             cells: vec![DashboardCell::default(); len],
             cursor: None,
+            selection: None,
+            half_gap_rows: Vec::new(),
+            cursor_style: DashboardCursor::Block,
         }
     }
 
@@ -129,6 +195,57 @@ impl DashboardFrame {
             }
             self.set_char(c, row, ch, fg);
             c += 1;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Palette
+// ---------------------------------------------------------------------------
+
+/// The app's active colour palette, handed to a provider so an interactive
+/// dashboard can draw in the colours the rest of the app is already using.
+///
+/// Without it a provider has to invent its own, which is wrong twice over: the
+/// dashboard stops matching the list the user just came from, and it stops
+/// following the light/dark theme, because a hardcoded constant cannot know
+/// which one is active.
+///
+/// The fields mirror the app's own palette one for one. Their meanings, in the
+/// order a dashboard usually needs them:
+///
+/// * `background` — the window ground. A cell with `bg` alpha 0 shows it.
+/// * `text` — every ordinary glyph.
+/// * `selected` — the fill behind whatever the cursor is on. In the list this is
+///   the highlight on the current row, so a dashboard that uses it for its own
+///   cursor reads as the same idea rather than a second convention.
+/// * `header_sep` — the app's chrome divider. Subtle against the background in
+///   both themes, which makes it the right fill for a band or a rule.
+/// * `error` — the status line when something failed.
+/// * `ext_search`, `scroll_search` — the two find-highlight fills.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DashboardPalette {
+    pub background: u32,
+    pub text: u32,
+    pub header_sep: u32,
+    pub selected: u32,
+    pub ext_search: u32,
+    pub scroll_search: u32,
+    pub error: u32,
+}
+
+impl Default for DashboardPalette {
+    /// The app's dark theme, so a provider that is never handed one still draws
+    /// in real colours rather than in black on black.
+    fn default() -> Self {
+        DashboardPalette {
+            background: 0x000000FF,
+            text: 0xFFFFFFFF,
+            header_sep: 0x333333FF,
+            selected: 0x2D4A28FF,
+            ext_search: 0x696969FF,
+            scroll_search: 0x264F78FF,
+            error: 0xFF0000FF,
         }
     }
 }

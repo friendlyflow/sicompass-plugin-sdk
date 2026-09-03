@@ -172,6 +172,7 @@ impl Default for PollResult {
             is_busy: false,
             at_root: true,
             error: None,
+            announcement: None,
             dashboard_request: None,
             navigation_request: None,
         }
