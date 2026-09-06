@@ -136,7 +136,7 @@ pub fn data_home() -> Option<PathBuf> {
 
 /// Returns `~/.local/state/sicompass/` (or platform equivalent) for log files.
 pub fn log_dir() -> Option<PathBuf> {
-    state_home().map(|s| s.join("sicompass"))
+    app_state_dir()
 }
 
 /// Returns the user's Downloads directory.
@@ -148,9 +148,55 @@ pub fn downloads_dir() -> Option<PathBuf> {
 // Sicompass config paths
 // ---------------------------------------------------------------------------
 
+/// The one directory segment every sicompass-owned path is namespaced under.
+///
+/// Follows the build profile, the same way the Start Menu registration and the
+/// Vulkan validation layers already do: a release build is an installed app and
+/// owns `sicompass`, a debug build is somebody's working copy and owns
+/// `sicompass-dev`. So a build run out of `target/` gets a completely separate
+/// config, state, data and cache tree, and can run beside an installed copy
+/// without the two overwriting each other's `settings.json`, rolling log,
+/// Chrome user-data-dir or plugin update staging directory.
+///
+/// To drive a build against production data, build it in release.
+///
+/// Plugins never see this. They reach the host's paths through [`plugins_dir`]
+/// and [`main_config_path`], so they follow it automatically, and no WIT or ABI
+/// change is involved.
+pub const fn app_dir_name() -> &'static str {
+    if cfg!(debug_assertions) {
+        "sicompass-dev"
+    } else {
+        "sicompass"
+    }
+}
+
+/// `<config_home>/<app_dir_name()>` — the root of everything the app owns.
+///
+/// Prefer this and its siblings over joining `"sicompass"` by hand, so a caller
+/// cannot accidentally opt out of the dev/production split.
+pub fn app_config_dir() -> Option<PathBuf> {
+    config_home().map(|c| c.join(app_dir_name()))
+}
+
+/// `<data_home>/<app_dir_name()>` — documents the user created and owns.
+pub fn app_data_dir() -> Option<PathBuf> {
+    data_home().map(|d| d.join(app_dir_name()))
+}
+
+/// `<state_home>/<app_dir_name()>` — logs and recall histories.
+pub fn app_state_dir() -> Option<PathBuf> {
+    state_home().map(|s| s.join(app_dir_name()))
+}
+
+/// `<cache_home>/<app_dir_name()>` — regenerable caches.
+pub fn app_cache_dir() -> Option<PathBuf> {
+    cache_home().map(|c| c.join(app_dir_name()))
+}
+
 /// Returns `~/.config/sicompass/providers/` (or platform equivalent).
 pub fn provider_config_dir() -> Option<PathBuf> {
-    config_home().map(|c| c.join("sicompass").join("providers"))
+    app_config_dir().map(|c| c.join("providers"))
 }
 
 /// Returns `~/.config/sicompass/providers/<name>.json`.
@@ -160,12 +206,12 @@ pub fn provider_config_path(name: &str) -> Option<PathBuf> {
 
 /// Returns `~/.config/sicompass/settings.json`.
 pub fn main_config_path() -> Option<PathBuf> {
-    config_home().map(|c| c.join("sicompass").join("settings.json"))
+    app_config_dir().map(|c| c.join("settings.json"))
 }
 
 /// Returns `~/.config/sicompass/plugins/`.
 pub fn plugins_dir() -> Option<PathBuf> {
-    config_home().map(|c| c.join("sicompass").join("plugins"))
+    app_config_dir().map(|c| c.join("plugins"))
 }
 
 // ---------------------------------------------------------------------------
@@ -725,6 +771,51 @@ mod tests {
     fn test_plugins_dir_contains_plugins() {
         let p = plugins_dir().unwrap();
         assert!(p.to_string_lossy().contains("plugins"));
+    }
+
+    /// These tests are themselves a debug build, so this is the half of the
+    /// mapping that can actually be checked here; the release half is checked
+    /// by the app's own release smoke test.
+    #[test]
+    fn app_dir_name_is_the_dev_name_under_a_debug_build() {
+        assert!(
+            cfg!(debug_assertions),
+            "tests are built with debug assertions"
+        );
+        assert_eq!(app_dir_name(), "sicompass-dev");
+    }
+
+    /// Every sicompass-owned path hangs off `app_dir_name()`, so nothing can be
+    /// left behind in the production tree when a debug build runs.
+    #[test]
+    fn every_app_path_is_namespaced_by_app_dir_name() {
+        let name = app_dir_name();
+        for (label, dir) in [
+            ("config", app_config_dir()),
+            ("data", app_data_dir()),
+            ("state", app_state_dir()),
+            ("cache", app_cache_dir()),
+        ] {
+            let dir = dir.unwrap();
+            assert_eq!(
+                dir.file_name().unwrap().to_string_lossy(),
+                name,
+                "app_{label}_dir must end with app_dir_name()"
+            );
+        }
+        // And the derived paths inherit it rather than re-joining by hand.
+        for derived in [
+            main_config_path().unwrap(),
+            provider_config_dir().unwrap(),
+            plugins_dir().unwrap(),
+            log_dir().unwrap(),
+        ] {
+            assert!(
+                derived.components().any(|c| c.as_os_str() == name),
+                "{} is not under {name}",
+                derived.display()
+            );
+        }
     }
 
     #[test]
