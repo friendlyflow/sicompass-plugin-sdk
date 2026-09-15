@@ -31,6 +31,7 @@ crate-type = ["cdylib", "rlib"]
 # `assets` URI helpers this crate re-exports. (0.3.0 was the previous floor, for the
 # `host` feature itself: against 0.2.x `default-features = false` is a no-op — that
 # version has no features at all — so the guest would drag in `trash` and `tokio`,
-# neither of which builds for wasm.)
-sicompass-sdk = { version = "0.6.0", path = "..", default-features = false }
+# neither of which builds for wasm.) 0.8.0 added the `input` text-field model this
+# crate re-exports.
+sicompass-sdk = { version = "0.8.0", path = "..", default-features = false }
 wit-bindgen = "0.60.0"

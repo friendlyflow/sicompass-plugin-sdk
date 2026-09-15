@@ -116,6 +116,12 @@ pub use sicompass_sdk::assets;
 pub use sicompass_sdk::ffon;
 pub use sicompass_sdk::{FfonElement, FfonObject, IdArray};
 
+/// The multiline text field model the app edits `<input>` with. A dashboard that
+/// edits text itself (a card, a form) should keep an [`input::InputState`] and lay
+/// its lines out with [`input::wrap_cells`], so it wraps, moves and selects
+/// exactly like every other field.
+pub use sicompass_sdk::input;
+
 // ---------------------------------------------------------------------------
 // FFON codec
 // ---------------------------------------------------------------------------

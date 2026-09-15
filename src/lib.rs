@@ -32,6 +32,9 @@ pub const WIT_SOURCE: &str = include_str!("../wit/sicompass-plugin.wit");
 pub mod assets;
 pub mod dashboard;
 pub mod ffon;
+// The multiline text field model behind `<input>`, shared by the app's Insert
+// mode and any surface that edits text itself.
+pub mod input;
 pub mod placeholders;
 pub mod provider;
 pub mod tags;
