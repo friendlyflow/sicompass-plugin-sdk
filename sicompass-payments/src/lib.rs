@@ -6,6 +6,9 @@
 //! here runs inside a sandboxed plugin (`wasm32-wasip2`): no threads, no HTTP
 //! client of its own, no app configuration.
 //!
+//! - [`cloud`]: the service as a plugin runs it (switch, row, debounced
+//!   uploads and restore as background tasks), over a small [`cloud::Host`]
+//!   trait the plugin implements with its `host`, `license` and `tasks`.
 //! - [`snapshot`]: a store directory as a snapshot, the path checks that keep a
 //!   restore inside it, and back to disk.
 //! - [`protocol`]: upload, download and restore, over the caller's `send`
@@ -24,6 +27,7 @@
 //! The paywall is on the service, never on the data: a plugin using this shows
 //! and saves the user's data whether or not they pay.
 
+pub mod cloud;
 pub mod debounce;
 pub mod protocol;
 pub mod row;

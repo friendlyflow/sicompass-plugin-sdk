@@ -10,6 +10,11 @@ their data in their own folder. The Sicompass notes and board plugins use it to
 back up to Sicompass Cloud, and a plugin of your own can use it against your
 own server.
 
+- `cloud` is the whole service as a plugin runs it: the settings switch, the
+  backup row, uploads a few seconds after the last change and restores, both
+  as background tasks. Your plugin implements a small `Host` trait (its clock,
+  `license`, `tasks` and translations) and forwards its saves, polls and task
+  events.
 - `snapshot` reads a plugin's folder into a snapshot and writes one back,
   checking every path so a restore can never write outside the folder.
 - `protocol` uploads, downloads and restores, over the HTTP your plugin has
@@ -35,7 +40,9 @@ sicompass-payments = { git = "https://github.com/friendlyflow/payments_plugin_si
 
 Your plugin learns where the user stands, and gets the token for your own
 service, from its host's `license` interface, so it never handles a
-certificate.
+certificate. The messages the user sees come from your plugin's own locales,
+under your prefix: `cloud::MESSAGES` lists the ids. The notes plugin
+(`notes_plugin_sicompass`) is a complete example.
 
 ## Building from source
 
