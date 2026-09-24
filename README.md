@@ -57,7 +57,7 @@ timeline records, dashboard types — and compiles for `wasm32-unknown-unknown`.
 crate-type = ["cdylib"]
 
 [dependencies]
-sicompass-pdk = "0.1"
+sicompass-pdk = "0.5"
 ```
 
 ```rust
@@ -132,6 +132,17 @@ ComponentizeJS, but it embeds a JavaScript engine — megabytes per plugin, slow
 under the interpreter the App Store build uses, and it needs WASI, which is
 exactly what this design excludes. Treat it as unsupported for now.
 
+## Building from source
+
+```bash
+nix develop                  # optional, brings the toolchain with both WASM targets
+cargo test --all
+./scripts/verify-guest.sh    # builds examples/hello-plugin and audits its imports
+```
+
+The dev shell's Rust comes from rust-overlay, not nixpkgs, because nixpkgs' rustc
+has no `std` for `wasm32-wasip2`, the target plugins are moving to.
+
 ## Releasing
 
 Tags of the form `vX.Y.Z` trigger the release workflow, which verifies the WIT
@@ -145,4 +156,8 @@ those releases went out via a local `cargo publish` instead. Fix the
 
 ## License
 
-GPL-3.0-only. See `LICENSE` (inherited from the parent Sicompass project).
+#### Open source license
+
+If you are creating an open source application under a license compatible with
+the GNU GPL license v3, you may use this project under the terms of the GPLv3.
+See [LICENSE](LICENSE), which also describes the commercial license.
