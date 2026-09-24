@@ -110,6 +110,9 @@ fn host_imports_are_exactly_the_capability_set() {
         "[method]child.resize",
         "[method]child.try-wait",
         "[method]child.kill",
+        // interface sockets — linked ONLY with a `permissions.sockets` grant;
+        // resolves approved names so wasi:sockets/ip-name-lookup is never linked.
+        "resolve",
         // Reads only files under `assets/` in the plugin's own install directory,
         // i.e. bytes the plugin shipped itself. No ambient filesystem.
         "read-asset",

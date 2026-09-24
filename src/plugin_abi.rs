@@ -93,6 +93,22 @@ pub const PROCESS_FUNCTIONS: &[(&str, &str)] = &[
     ("sicompass:plugin/process", "[method]child.kill"),
 ];
 
+/// `sicompass:plugin/sockets`: linked only with a `sockets` grant.
+pub const SOCKET_FUNCTIONS: &[(&str, &str)] = &[("sicompass:plugin/sockets", "resolve")];
+
+/// The `wasi:sockets` interfaces a `sockets` grant links (version stripped):
+/// what `std::net::TcpStream` imports on `wasm32-wasip2`, measured. The UDP pair
+/// comes with it whether used or not, and is switched off at runtime.
+/// `ip-name-lookup` is deliberately absent: see [`SOCKET_FUNCTIONS`].
+pub const WASI_SOCKETS: &[&str] = &[
+    "wasi:sockets/network",
+    "wasi:sockets/instance-network",
+    "wasi:sockets/tcp",
+    "wasi:sockets/tcp-create-socket",
+    "wasi:sockets/udp",
+    "wasi:sockets/udp-create-socket",
+];
+
 /// Most tasks one plugin runs at once. Further `spawn`s wait for a slot.
 pub const MAX_CONCURRENT_TASKS: usize = 4;
 
@@ -195,6 +211,24 @@ pub fn audit_imports(
             if is_wasi_baseline(interface) {
                 continue;
             }
+            if interface == "wasi:sockets/ip-name-lookup" {
+                return Err(
+                    "plugin resolves names through wasi:sockets/ip-name-lookup, which \
+                     sicompass never links (it would resolve any name). Resolve with \
+                     sicompass:plugin/sockets.resolve and connect by address; \
+                     sicompass_pdk::sockets::connect does both."
+                        .to_owned(),
+                );
+            }
+            if WASI_SOCKETS.contains(&interface) {
+                if permissions.sockets.is_empty() {
+                    return Err(format!(
+                        "plugin imports `{interface}` but lists no `host:port` in \
+                         `permissions.sockets` in plugin.json"
+                    ));
+                }
+                continue;
+            }
             return Err(format!(
                 "plugin imports `{interface}`, which needs a permission its plugin.json \
                  does not grant (or this sicompass does not support yet)"
@@ -205,6 +239,14 @@ pub fn audit_imports(
             "sicompass:plugin/host" => HOST_FUNCTIONS,
             "sicompass:plugin/desktop" => DESKTOP_FUNCTIONS,
             "sicompass:plugin/tasks" => TASK_FUNCTIONS,
+            "sicompass:plugin/sockets" => {
+                if permissions.sockets.is_empty() {
+                    return Err("plugin resolves socket addresses but lists no `host:port` \
+                         in `permissions.sockets` in plugin.json"
+                        .to_owned());
+                }
+                SOCKET_FUNCTIONS
+            }
             "sicompass:plugin/process" => {
                 if permissions.process.is_empty() {
                     return Err(
@@ -307,6 +349,25 @@ mod tests {
             iface("wasi:filesystem/preopens@0.2.9", &["get-directories"]),
         ];
         audit_imports(&imports, &provider_export(), &Permissions::default(), &[]).unwrap();
+    }
+
+    #[test]
+    fn sockets_need_listed_endpoints_and_name_lookup_is_never_linked() {
+        let tcp = vec![
+            iface("wasi:sockets/tcp@0.2.9", &[]),
+            iface("wasi:sockets/udp@0.2.9", &[]),
+            iface("sicompass:plugin/sockets@0.2.0", &["resolve"]),
+        ];
+        let granted = Permissions {
+            sockets: vec!["imap.example.org:993".to_owned()],
+            ..Default::default()
+        };
+        audit_imports(&tcp, &provider_export(), &granted, &[]).unwrap();
+        assert!(audit_imports(&tcp, &provider_export(), &Permissions::default(), &[]).is_err());
+
+        let lookup = vec![iface("wasi:sockets/ip-name-lookup@0.2.9", &[])];
+        let e = audit_imports(&lookup, &provider_export(), &granted, &[]).unwrap_err();
+        assert!(e.contains("sockets.resolve"), "{e}");
     }
 
     #[test]

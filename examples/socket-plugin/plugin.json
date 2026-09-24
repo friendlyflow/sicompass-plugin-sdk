@@ -1,0 +1,10 @@
+{
+  "name": "socket",
+  "displayName": "socket",
+  "type": "wasm",
+  "entry": "plugin.wasm",
+  "version": "0.2.0",
+  "permissions": {
+    "sockets": ["localhost:7"]
+  }
+}

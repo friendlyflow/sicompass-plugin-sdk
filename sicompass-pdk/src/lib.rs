@@ -144,6 +144,33 @@ pub mod process {
     pub use crate::bindings::sicompass::plugin::process::*;
 }
 
+/// TCP connections to the `host:port` pairs listed in `permissions.sockets`.
+///
+/// Use [`sockets::connect`], which resolves the name through the host (which
+/// answers only for your approved pairs) and connects by address. Plain
+/// `TcpStream::connect("host:port")` would need `wasi:sockets/ip-name-lookup`,
+/// which sicompass never links. TLS is yours to add (rustls with a pure-Rust
+/// crypto provider builds for `wasm32-wasip2`).
+pub mod sockets {
+    pub use crate::bindings::sicompass::plugin::sockets::*;
+
+    /// Connect to an approved `host:port`, trying each address it resolves to.
+    pub fn connect(host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
+        let addrs = resolve(host, port).map_err(std::io::Error::other)?;
+        let mut last = std::io::Error::other(format!("{host} resolved to no address"));
+        for a in addrs {
+            let Ok(ip) = a.parse::<std::net::IpAddr>() else {
+                continue;
+            };
+            match std::net::TcpStream::connect((ip, port)) {
+                Ok(s) => return Ok(s),
+                Err(e) => last = e,
+            }
+        }
+        Err(last)
+    }
+}
+
 /// Your plugin's own folder, when `plugin.json` asks for `"storage": true`.
 ///
 /// It persists across restarts and updates, and nothing else can see it. Use it
