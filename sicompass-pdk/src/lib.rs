@@ -150,7 +150,8 @@ pub mod process {
 /// answers only for your approved pairs) and connects by address. Plain
 /// `TcpStream::connect("host:port")` would need `wasi:sockets/ip-name-lookup`,
 /// which sicompass never links. TLS is yours to add (rustls with a pure-Rust
-/// crypto provider builds for `wasm32-wasip2`).
+/// crypto provider builds for `wasm32-wasip2`). `TcpStream::try_clone` is not
+/// supported on `wasm32-wasip2`: read and write through `&stream` instead.
 pub mod sockets {
     pub use crate::bindings::sicompass::plugin::sockets::*;
 

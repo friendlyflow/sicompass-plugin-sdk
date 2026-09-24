@@ -17,11 +17,12 @@ struct Sock {
     path: String,
 }
 
+/// Send `ping` and read one line back. Through `&TcpStream` for both
+/// directions: `try_clone` is not supported on `wasm32-wasip2`.
 fn exchange(stream: std::net::TcpStream) -> std::io::Result<String> {
-    let mut writer = stream.try_clone()?;
-    writer.write_all(b"ping\n")?;
+    (&stream).write_all(b"ping\n")?;
     let mut line = String::new();
-    BufReader::new(stream).read_line(&mut line)?;
+    BufReader::new(&stream).read_line(&mut line)?;
     Ok(line.trim_end().to_owned())
 }
 
