@@ -1,0 +1,25 @@
+# Its own workspace root: a library, built for wasm32-wasip2 inside plugins and
+# natively for its tests.
+[workspace]
+
+[package]
+name = "sicompass-payments"
+version = "0.2.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Cloud backup for sicompass plugins: store snapshots, the backup protocol over the plugin's net, debouncing and the backup row"
+repository = "https://github.com/friendlyflow/payments_plugin_sicompass"
+# Used by git tag by the plugins that back up, never from crates.io.
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Hashes a store snapshot so an unchanged store uploads nothing.
+sha2 = "0.11"
+
+[dev-dependencies]
+tempfile = "3"
+wiremock = "0.6"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+reqwest = { version = "0.13", features = ["blocking", "json"] }
