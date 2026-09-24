@@ -577,7 +577,10 @@ interface process {
     /// Resize the PTY. Ignored without one.
     resize: func(size: pty-size);
 
-    /// The exit code once it has exited (-1 when killed by a signal).
+    /// The exit code once it has exited (-1 when killed by a signal) and its
+    /// output has arrived, so the `read`s after this return the rest of it.
+    /// (A program it left running in the background can hold its output open;
+    /// the exit is reported half a second later regardless.)
     try-wait: func() -> option<s32>;
 
     /// Stop it.

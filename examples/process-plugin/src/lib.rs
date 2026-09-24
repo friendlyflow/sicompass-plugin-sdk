@@ -31,9 +31,14 @@ fn collect(child: &Child) -> (Option<i32>, String) {
     loop {
         out.extend(child.read(65536));
         if let Some(code) = child.try_wait() {
-            // Whatever arrived between the last read and the exit.
-            std::thread::sleep(Duration::from_millis(50));
-            out.extend(child.read(65536));
+            // The output has all arrived by now: read what is left.
+            loop {
+                let rest = child.read(65536);
+                if rest.is_empty() {
+                    break;
+                }
+                out.extend(rest);
+            }
             return (Some(code), String::from_utf8_lossy(&out).into_owned());
         }
         if Instant::now() > deadline {
