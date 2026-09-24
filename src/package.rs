@@ -125,6 +125,39 @@ impl ReleaseInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Checking the component before it is installed
+// ---------------------------------------------------------------------------
+
+type Auditor = Box<dyn Fn(&[u8], &PluginManifest) -> Result<(), String> + Send + Sync>;
+
+static AUDITOR: std::sync::RwLock<Option<Auditor>> = std::sync::RwLock::new(None);
+
+/// Install the host's check of a component against its manifest: that it is a
+/// component of this ABI and imports nothing its permissions do not grant.
+///
+/// Reading a component's imports takes a component-model parser, which the
+/// app has (wasmtime) and the Store must not link a second time, so the app
+/// registers the same audit it runs when it loads a plugin. Same shape as
+/// [`crate::register_url_fetcher`].
+pub fn register_component_auditor(
+    f: impl Fn(&[u8], &PluginManifest) -> Result<(), String> + Send + Sync + 'static,
+) {
+    if let Ok(mut slot) = AUDITOR.write() {
+        *slot = Some(Box::new(f));
+    }
+}
+
+/// Audit `wasm` against `manifest` with the registered auditor. Refused when
+/// none is registered: an unchecked component is never installed.
+pub fn audit_component(wasm: &[u8], manifest: &PluginManifest) -> Result<(), String> {
+    let slot = AUDITOR.read().map_err(|e| e.to_string())?;
+    match slot.as_ref() {
+        Some(audit) => audit(wasm, manifest),
+        None => Err("this build cannot check a plugin's imports, so it installs none".to_owned()),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Keys and signatures
 // ---------------------------------------------------------------------------
 
@@ -558,5 +591,22 @@ mod tests {
             assert!(newer.asks_for_more_than(&before), "{extra}");
             assert_ne!(newer.approval_fingerprint(), info.approval_fingerprint());
         }
+    }
+
+    #[test]
+    fn nothing_is_audited_without_an_auditor_and_the_registered_one_decides() {
+        let m = manifest("1.0.0");
+        let err = audit_component(b"\0asm", &m).unwrap_err();
+        assert!(err.contains("installs none"), "{err}");
+
+        register_component_auditor(|wasm, m| {
+            if wasm.starts_with(b"\0asm") && m.name == "demo" {
+                Ok(())
+            } else {
+                Err("refused".to_owned())
+            }
+        });
+        assert!(audit_component(b"\0asm", &m).is_ok());
+        assert_eq!(audit_component(b"nope", &m).unwrap_err(), "refused");
     }
 }
