@@ -74,6 +74,7 @@ pub const DESKTOP_FUNCTIONS: &[(&str, &str)] = &[
     ("sicompass:plugin/desktop", "applications"),
     ("sicompass:plugin/desktop", "open-with"),
     ("sicompass:plugin/desktop", "stat"),
+    ("sicompass:plugin/desktop", "oauth-redirect"),
 ];
 
 /// `sicompass:plugin/license`: always linked; it answers only whether the user
@@ -99,6 +100,9 @@ pub const TASK_FUNCTIONS: &[(&str, &str)] = &[
 pub const PROCESS_FUNCTIONS: &[(&str, &str)] = &[
     ("sicompass:plugin/process", "which"),
     ("sicompass:plugin/process", "[static]child.spawn"),
+    ("sicompass:plugin/process", "[static]child.spawn-with-channel"),
+    ("sicompass:plugin/process", "[method]child.channel-read"),
+    ("sicompass:plugin/process", "[method]child.channel-write"),
     ("sicompass:plugin/process", "[method]child.read"),
     ("sicompass:plugin/process", "[method]child.read-stderr"),
     ("sicompass:plugin/process", "[method]child.write"),

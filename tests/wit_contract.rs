@@ -99,6 +99,7 @@ fn host_imports_are_exactly_the_capability_set() {
         "applications",
         "open-with",
         "stat",
+        "oauth-redirect",
         // interface license — always linked; where the user stands with a tier,
         // and the token for the tier the plugin's own service names, never a
         // key or a certificate.
@@ -115,6 +116,9 @@ fn host_imports_are_exactly_the_capability_set() {
         // reaches outside the sandbox.
         "which",
         "[static]child.spawn",
+        "[static]child.spawn-with-channel",
+        "[method]child.channel-read",
+        "[method]child.channel-write",
         "[method]child.read",
         "[method]child.read-stderr",
         "[method]child.write",
