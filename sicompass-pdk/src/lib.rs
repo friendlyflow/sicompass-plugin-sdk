@@ -112,9 +112,11 @@ pub mod net {
     pub use crate::bindings::sicompass::plugin::net::*;
 }
 
-/// The user's desktop: open a URL or a file, move a file to the trash and back,
-/// and read a symlink's target (WASI never reads an absolute one itself; see
-/// `sicompass_sdk::fs_links`).
+/// The user's desktop: open a URL or a file (with its default application, or
+/// one from `applications`), move a file to the trash and back, read a
+/// symlink's target (WASI never reads an absolute one itself; see
+/// `sicompass_sdk::fs_links`), and what `ls -l` shows (`stat`: permission bits,
+/// owner, group, which WASI's metadata lacks).
 ///
 /// Every path must lie inside a directory your plugin was granted: its own
 /// [`STORAGE_DIR`] (with `permissions.storage`) or a folder from

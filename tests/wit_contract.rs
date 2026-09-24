@@ -96,6 +96,9 @@ fn host_imports_are_exactly_the_capability_set() {
         "trash",
         "restore",
         "read-link",
+        "applications",
+        "open-with",
+        "stat",
         // interface license — always linked; where the user stands with a tier,
         // and the token for the tier the plugin's own service names, never a
         // key or a certificate.
