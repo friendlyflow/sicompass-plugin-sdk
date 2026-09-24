@@ -422,6 +422,80 @@ pub fn blank_frame(cols: u16, rows: u16) -> Frame {
 }
 
 // ---------------------------------------------------------------------------
+// The SDK's dashboard types, across the boundary
+// ---------------------------------------------------------------------------
+//
+// A dashboard built on the SDK's model (a terminal emulator that snapshots
+// into `sicompass_sdk::DashboardFrame`, say) hands its frame to the host with
+// `.into()`, and reads the host's keys back as `sicompass_sdk::DashboardKey`.
+
+impl From<sicompass_sdk::DashboardFrame> for Frame {
+    fn from(f: sicompass_sdk::DashboardFrame) -> Self {
+        use sicompass_sdk::dashboard::DashboardCursor;
+        Frame {
+            cols: f.cols,
+            rows: f.rows,
+            cells: f
+                .cells
+                .into_iter()
+                .map(|c| Cell {
+                    ch: c.ch,
+                    fg: c.fg,
+                    bg: c.bg,
+                    attrs: CellAttrs {
+                        bold: c.attrs.bold,
+                        underline: c.attrs.underline,
+                        reverse: c.attrs.reverse,
+                    },
+                })
+                .collect(),
+            cursor: f.cursor,
+            selection: f.selection.map(|s| Selection {
+                col: s.col,
+                row: s.row,
+                cols: s.cols,
+                rows: s.rows,
+            }),
+            half_gap_rows: f.half_gap_rows,
+            cursor_style: match f.cursor_style {
+                DashboardCursor::Block => CursorStyle::Block,
+                DashboardCursor::Bar => CursorStyle::Bar,
+            },
+        }
+    }
+}
+
+impl From<Key> for sicompass_sdk::DashboardKey {
+    fn from(k: Key) -> Self {
+        use sicompass_sdk::DashboardKeysym as S;
+        sicompass_sdk::DashboardKey {
+            keysym: match k.sym {
+                Keysym::Enter => S::Enter,
+                Keysym::Backspace => S::Backspace,
+                Keysym::Tab => S::Tab,
+                Keysym::Escape => S::Escape,
+                Keysym::Up => S::Up,
+                Keysym::Down => S::Down,
+                Keysym::Left => S::Left,
+                Keysym::Right => S::Right,
+                Keysym::Home => S::Home,
+                Keysym::End => S::End,
+                Keysym::PageUp => S::PageUp,
+                Keysym::PageDown => S::PageDown,
+                Keysym::Insert => S::Insert,
+                Keysym::Delete => S::Delete,
+                Keysym::F(n) => S::F(n),
+                Keysym::Ch(c) => S::Char(c),
+                Keysym::Unknown => S::Unknown,
+            },
+            ctrl: k.ctrl,
+            shift: k.shift,
+            alt: k.alt,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The Plugin trait
 // ---------------------------------------------------------------------------
 
@@ -695,13 +769,28 @@ macro_rules! export_plugin {
             // methods are static, which is why state cannot simply live in `self`.
             thread_local! {
                 static __PLUGIN: RefCell<Option<$ty>> = RefCell::new(None);
+                // The path last reported to the host.
+                static __PATH: RefCell<::std::string::String> =
+                    RefCell::new(::std::string::String::new());
             }
 
             fn __with<R>(f: impl FnOnce(&mut $ty) -> R) -> R {
                 __PLUGIN.with(|cell| {
                     let mut slot = cell.borrow_mut();
                     let p = slot.get_or_insert_with(<$ty as $crate::Plugin>::new);
-                    f(p)
+                    let out = f(p);
+                    // Any call can move the plugin (a command, an edit, a
+                    // shell's `cd` noticed in `poll`), and the host only
+                    // learns a path from the navigation calls on its own.
+                    let now = $crate::Plugin::current_path(p);
+                    __PATH.with(|last| {
+                        let mut last = last.borrow_mut();
+                        if *last != now {
+                            now.clone_into(&mut last);
+                            $crate::host::moved_to(now);
+                        }
+                    });
+                    out
                 })
             }
 
@@ -1151,6 +1240,51 @@ mod tests {
         write_str(&mut f, 99, 0, "gone", 0xFFFF_FFFF);
         write_str(&mut f, u16::MAX, 0, "gone", 0xFFFF_FFFF);
         assert!(f.cells.iter().all(|c| c.ch == ' '));
+    }
+
+    #[test]
+    fn an_sdk_frame_crosses_whole() {
+        let mut f = sicompass_sdk::DashboardFrame::empty(3, 2);
+        f.cells[4].ch = 'x';
+        f.cells[4].attrs.reverse = true;
+        f.cursor = Some((1, 1));
+        f.selection = Some(sicompass_sdk::dashboard::DashboardSelection {
+            col: 0,
+            row: 1,
+            cols: 3,
+            rows: 1,
+        });
+        f.half_gap_rows = vec![0];
+        f.cursor_style = sicompass_sdk::dashboard::DashboardCursor::Bar;
+        let w: Frame = f.into();
+        assert_eq!((w.cols, w.rows, w.cells.len()), (3, 2, 6));
+        assert_eq!(w.cells[4].ch, 'x');
+        assert!(w.cells[4].attrs.reverse);
+        assert_eq!(w.cursor, Some((1, 1)));
+        assert_eq!(w.selection.map(|s| (s.row, s.cols)), Some((1, 3)));
+        assert_eq!(w.half_gap_rows, vec![0]);
+        assert!(matches!(w.cursor_style, CursorStyle::Bar));
+    }
+
+    #[test]
+    fn a_host_key_reads_as_the_sdk_key() {
+        let k: sicompass_sdk::DashboardKey = Key {
+            sym: Keysym::Ch('c'),
+            ctrl: true,
+            shift: false,
+            alt: false,
+        }
+        .into();
+        assert_eq!(k.keysym, sicompass_sdk::DashboardKeysym::Char('c'));
+        assert!(k.ctrl && !k.shift && !k.alt);
+        let f5: sicompass_sdk::DashboardKey = Key {
+            sym: Keysym::F(5),
+            ctrl: false,
+            shift: true,
+            alt: false,
+        }
+        .into();
+        assert_eq!(f5.keysym, sicompass_sdk::DashboardKeysym::F(5));
     }
 
     #[test]

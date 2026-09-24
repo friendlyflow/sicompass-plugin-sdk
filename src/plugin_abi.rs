@@ -54,6 +54,7 @@ pub const HOST_FUNCTIONS: &[(&str, &str)] = &[
     ("sicompass:plugin/host", "translate"),
     ("sicompass:plugin/host", "translate-args"),
     ("sicompass:plugin/host", "read-asset"),
+    ("sicompass:plugin/host", "moved-to"),
 ];
 
 /// `sicompass:plugin/net`: linked only for a plugin with `allowedHosts`.
@@ -96,12 +97,15 @@ pub const TASK_FUNCTIONS: &[(&str, &str)] = &[
 /// `permissions.process` lists programs. Resource functions carry wit-parser's
 /// names (`[static]child.spawn`, `[method]child.read`).
 pub const PROCESS_FUNCTIONS: &[(&str, &str)] = &[
+    ("sicompass:plugin/process", "which"),
     ("sicompass:plugin/process", "[static]child.spawn"),
     ("sicompass:plugin/process", "[method]child.read"),
     ("sicompass:plugin/process", "[method]child.read-stderr"),
     ("sicompass:plugin/process", "[method]child.write"),
     ("sicompass:plugin/process", "[method]child.resize"),
     ("sicompass:plugin/process", "[method]child.try-wait"),
+    ("sicompass:plugin/process", "[method]child.cwd"),
+    ("sicompass:plugin/process", "[method]child.foreground-busy"),
     ("sicompass:plugin/process", "[method]child.kill"),
 ];
 

@@ -113,12 +113,15 @@ fn host_imports_are_exactly_the_capability_set() {
         // interface process — linked ONLY when plugin.json lists programs in
         // `permissions.process`, which the user approves. The one capability that
         // reaches outside the sandbox.
+        "which",
         "[static]child.spawn",
         "[method]child.read",
         "[method]child.read-stderr",
         "[method]child.write",
         "[method]child.resize",
         "[method]child.try-wait",
+        "[method]child.cwd",
+        "[method]child.foreground-busy",
         "[method]child.kill",
         // interface sockets — linked ONLY with a `permissions.sockets` grant;
         // resolves approved names so wasi:sockets/ip-name-lookup is never linked.
@@ -126,6 +129,8 @@ fn host_imports_are_exactly_the_capability_set() {
         // Reads only files under `assets/` in the plugin's own install directory,
         // i.e. bytes the plugin shipped itself. No ambient filesystem.
         "read-asset",
+        // Tells the host where the plugin is; grants nothing.
+        "moved-to",
     ]
     .iter()
     .map(|s| s.to_string())
