@@ -80,6 +80,19 @@ pub const TASK_FUNCTIONS: &[(&str, &str)] = &[
     ("sicompass:plugin/tasks", "cancelled"),
 ];
 
+/// `sicompass:plugin/process`: linked only for a plugin whose
+/// `permissions.process` lists programs. Resource functions carry wit-parser's
+/// names (`[static]child.spawn`, `[method]child.read`).
+pub const PROCESS_FUNCTIONS: &[(&str, &str)] = &[
+    ("sicompass:plugin/process", "[static]child.spawn"),
+    ("sicompass:plugin/process", "[method]child.read"),
+    ("sicompass:plugin/process", "[method]child.read-stderr"),
+    ("sicompass:plugin/process", "[method]child.write"),
+    ("sicompass:plugin/process", "[method]child.resize"),
+    ("sicompass:plugin/process", "[method]child.try-wait"),
+    ("sicompass:plugin/process", "[method]child.kill"),
+];
+
 /// Most tasks one plugin runs at once. Further `spawn`s wait for a slot.
 pub const MAX_CONCURRENT_TASKS: usize = 4;
 
@@ -167,8 +180,6 @@ pub fn audit_imports(
     permissions: &Permissions,
     allowed_hosts: &[String],
 ) -> Result<(), String> {
-    let _ = permissions; // Gated WASI (storage, filesystem, sockets) lands in 4.4-4.7.
-
     for name in imports.iter().map(|i| &i.name).chain(exports) {
         check_abi_version(name)?;
     }
@@ -194,6 +205,16 @@ pub fn audit_imports(
             "sicompass:plugin/host" => HOST_FUNCTIONS,
             "sicompass:plugin/desktop" => DESKTOP_FUNCTIONS,
             "sicompass:plugin/tasks" => TASK_FUNCTIONS,
+            "sicompass:plugin/process" => {
+                if permissions.process.is_empty() {
+                    return Err(
+                        "plugin starts programs but lists none in `permissions.process` \
+                         in plugin.json; list them so the user can see and approve them"
+                            .to_owned(),
+                    );
+                }
+                PROCESS_FUNCTIONS
+            }
             "sicompass:plugin/net" => {
                 if allowed_hosts.is_empty() {
                     return Err("plugin uses the network but declares no `allowedHosts` in \
@@ -362,6 +383,22 @@ mod tests {
             check_locale_prefix("hello", "helloworld-x = 1\n"),
             Err("helloworld-x".to_owned())
         );
+    }
+
+    #[test]
+    fn process_needs_listed_programs() {
+        let imports = vec![iface(
+            "sicompass:plugin/process@0.2.0",
+            &["[static]child.spawn", "[method]child.read"],
+        )];
+        let e =
+            audit_imports(&imports, &provider_export(), &Permissions::default(), &[]).unwrap_err();
+        assert!(e.contains("permissions.process"), "{e}");
+        let granted = Permissions {
+            process: vec!["git".to_owned()],
+            ..Default::default()
+        };
+        audit_imports(&imports, &provider_export(), &granted, &[]).unwrap();
     }
 
     #[test]

@@ -134,6 +134,16 @@ pub mod tasks {
     pub use crate::bindings::sicompass::plugin::tasks::*;
 }
 
+/// Programs on the user's machine, only those listed in `permissions.process`.
+///
+/// **The one capability that reaches outside the sandbox**: a program you start
+/// runs with the user's full rights, which is why the user approves the list.
+/// [`process::Child::spawn`] starts one (optionally on a pseudo-terminal),
+/// `read`/`read_stderr` never block, and `try_wait` tells when it ended.
+pub mod process {
+    pub use crate::bindings::sicompass::plugin::process::*;
+}
+
 /// Your plugin's own folder, when `plugin.json` asks for `"storage": true`.
 ///
 /// It persists across restarts and updates, and nothing else can see it. Use it

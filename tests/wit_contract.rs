@@ -100,6 +100,16 @@ fn host_imports_are_exactly_the_capability_set() {
         "cancel",
         "emit",
         "cancelled",
+        // interface process — linked ONLY when plugin.json lists programs in
+        // `permissions.process`, which the user approves. The one capability that
+        // reaches outside the sandbox.
+        "[static]child.spawn",
+        "[method]child.read",
+        "[method]child.read-stderr",
+        "[method]child.write",
+        "[method]child.resize",
+        "[method]child.try-wait",
+        "[method]child.kill",
         // Reads only files under `assets/` in the plugin's own install directory,
         // i.e. bytes the plugin shipped itself. No ambient filesystem.
         "read-asset",

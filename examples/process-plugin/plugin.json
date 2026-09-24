@@ -1,0 +1,10 @@
+{
+  "name": "process",
+  "displayName": "process",
+  "type": "wasm",
+  "entry": "plugin.wasm",
+  "version": "0.2.0",
+  "permissions": {
+    "process": ["echo", "cat", "sh"]
+  }
+}
