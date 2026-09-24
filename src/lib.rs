@@ -49,6 +49,8 @@ pub mod provider;
 pub mod store;
 pub mod tags;
 pub mod timeline;
+// Undoable deletes: the snapshot, which a plugin needs as much as the app.
+pub mod fs_snapshot;
 
 // ---------------------------------------------------------------------------
 // Host-only
