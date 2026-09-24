@@ -7,7 +7,7 @@
 //!
 //! Loading this with an empty `allowedHosts` must fail.
 
-use sicompass_pdk::{export_plugin, net, Descriptor, FfonElement, Plugin};
+use sicompass_pdk::{Descriptor, FfonElement, Plugin, export_plugin, net};
 
 struct Net;
 

@@ -149,14 +149,13 @@ mod feature_split_tests {
     //! do that from inside the crate. CI must also run:
     //!
     //! ```text
-    //! cargo check --no-default-features --target wasm32-unknown-unknown
+    //! cargo check --no-default-features --target wasm32-wasip2
     //! ```
     //!
-    //! The guest target is `wasm32-unknown-unknown`, not a `wasip2` one, on
-    //! purpose: wasip2's std declares `wasi:*` imports, and the sicompass host
-    //! links none of them. Keeping the guest free of WASI is what makes "the
-    //! component's import section is its capability set" a true statement rather
-    //! than an aspiration.
+    //! Guests target `wasm32-wasip2`. Its std imports an inert WASI baseline that
+    //! the host links for every plugin, and everything that grants authority is
+    //! linked only when the plugin's manifest asks, which keeps "the component's
+    //! import section is its capability set" true.
 
     use super::*;
 

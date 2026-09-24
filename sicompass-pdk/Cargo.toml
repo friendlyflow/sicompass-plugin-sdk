@@ -1,5 +1,5 @@
-# Its own workspace root on purpose: this crate only ever builds for
-# wasm32-unknown-unknown, and wit-bindgen's generated code uses
+# Its own workspace root on purpose: this crate only ever builds for a WASM
+# target (wasm32-wasip2), and wit-bindgen's generated code uses
 # `wasm_import_module` extern blocks that do not link on a host target. Keeping it
 # out of the SDK's workspace means `cargo test` at the SDK root does not try.
 [workspace]

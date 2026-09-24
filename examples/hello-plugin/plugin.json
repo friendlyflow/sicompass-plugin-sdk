@@ -1,0 +1,12 @@
+{
+  "name": "hello",
+  "displayName": "hello",
+  "type": "wasm",
+  "entry": "plugin.wasm",
+  "version": "0.2.0",
+  "description": "hello-plugin-name",
+  "settings": [
+    { "type": "text", "label": "greetee", "key": "greetee", "default": "world" }
+  ],
+  "permissions": {}
+}

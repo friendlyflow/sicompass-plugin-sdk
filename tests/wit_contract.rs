@@ -9,9 +9,11 @@
 //! 1. The host import surface is exactly the intended capability set. A WASM guest
 //!    has no syscalls, so anything added to `interface host` is a new privilege
 //!    granted to every plugin. Adding one should require editing this test.
-//! 2. Nothing from `wasi:*` is imported. Guests target `wasm32-unknown-unknown`
-//!    precisely so their import section stays free of WASI, which is what lets the
-//!    host treat "imports a function" as "was granted a capability".
+//! 2. The WIT world names nothing from `wasi:*`. Guests target `wasm32-wasip2`,
+//!    whose std imports a WASI baseline, but *which* WASI a host links (an inert
+//!    baseline always, the rest only when the manifest grants it) is host policy,
+//!    enforced by its import audit. The ABI stays sicompass's own interfaces, so
+//!    this file never has to vendor the WASI packages.
 
 use std::collections::BTreeSet;
 use wit_parser::{InterfaceId, Resolve, TypeDefKind, WorldId, WorldItem};
@@ -85,6 +87,8 @@ fn host_imports_are_exactly_the_capability_set() {
         "get-setting",
         "now-millis",
         "translate",
+        // The same lookup with Fluent arguments. Reads the host's bundles only.
+        "translate-args",
         // Reads only files under `assets/` in the plugin's own install directory,
         // i.e. bytes the plugin shipped itself. No ambient filesystem.
         "read-asset",
@@ -161,8 +165,8 @@ fn no_wasi_imports() {
         if let Some(name) = resolve.id_of(id) {
             assert!(
                 !name.contains("wasi:"),
-                "world imports {name}: guests must stay WASI-free so the import \
-                 section is the capability set"
+                "world imports {name}: WASI is linked by host policy, not named \
+                 in the sicompass ABI"
             );
         }
     }
@@ -170,8 +174,8 @@ fn no_wasi_imports() {
     for (_, pkg) in resolve.packages.iter() {
         assert_ne!(
             pkg.name.namespace, "wasi",
-            "a wasi package entered the graph; guests target \
-             wasm32-unknown-unknown to keep this impossible"
+            "a wasi package entered the graph; the sicompass ABI must not \
+             depend on WASI's own versioning"
         );
     }
 }
@@ -255,6 +259,9 @@ fn provider_exports_cover_the_expected_surface() {
         "dashboard-resize",
         "enter-dashboard",
         "leave-dashboard",
+        // 0.2.0: conveniences the built-ins already had host-side.
+        "set-dashboard-entry",
+        "set-dashboard-palette",
     ] {
         assert!(exports.contains(f), "missing export `{f}`");
     }
@@ -353,5 +360,17 @@ fn binary_codec_round_trips_the_wire_format() {
     assert_eq!(
         ffon::deserialize_binary(&ffon::serialize_binary(&single)),
         single
+    );
+}
+
+/// The package version is the ABI version. It moved to 0.2.0 with the wasip2
+/// baseline and the parity additions, and a host refuses a guest built for a
+/// different one with a readable message rather than a link error, so the
+/// number has to be right.
+#[test]
+fn package_version_is_the_abi_version() {
+    assert!(
+        sicompass_sdk::WIT_SOURCE.contains("package sicompass:plugin@0.2.0;"),
+        "the WIT package line must name ABI 0.2.0"
     );
 }

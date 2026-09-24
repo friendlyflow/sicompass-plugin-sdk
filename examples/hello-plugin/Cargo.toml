@@ -1,4 +1,4 @@
-# Independent workspace: only ever built for wasm32-unknown-unknown.
+# Independent workspace: only ever built for wasm32-wasip2.
 [workspace]
 
 [package]

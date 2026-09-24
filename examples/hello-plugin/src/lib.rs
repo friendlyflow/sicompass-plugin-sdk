@@ -7,10 +7,12 @@
 //! Build:
 //!
 //! ```text
-//! cargo build --release --target wasm32-unknown-unknown
-//! wasm-tools component new \
-//!     target/wasm32-unknown-unknown/release/hello_plugin.wasm -o plugin.wasm
+//! cargo build --release --target wasm32-wasip2
+//! cp target/wasm32-wasip2/release/hello_plugin.wasm plugin.wasm
 //! ```
+//!
+//! With `plugin.json`, `assets/` and `locales/` next to it, that directory is an
+//! installable plugin.
 //!
 //! Then confirm what it is actually allowed to do:
 //!
@@ -24,8 +26,8 @@
 //! at all.
 
 use sicompass_pdk::{
-    blank_frame, export_plugin, host, write_str, DashboardKind, Descriptor, FfonElement,
-    FfonObject, Frame, Key, Keysym, ListItem, Plugin, PollResult, ProviderOp,
+    DashboardKind, Descriptor, FfonElement, FfonObject, Frame, Key, Keysym, ListItem, Plugin,
+    PollResult, ProviderOp, blank_frame, export_plugin, host, write_str,
 };
 
 /// Tracks a path and a counter, so navigation and commands both have something
@@ -72,13 +74,16 @@ impl Plugin for Hello {
     }
 
     fn fetch(&mut self) -> Vec<FfonElement> {
-        // The clock is a host import: SystemTime::now() compiles for
-        // wasm32-unknown-unknown and then fails at runtime.
+        // The host import. `std`'s clock works too since ABI 0.2 (baseline
+        // `wasi:clocks`), which the probe below shows.
         let stamp = host::now_millis();
 
         let mut section = FfonObject::new("hello from wasm");
         section.push(FfonElement::new_str(format!("current path: {}", self.path)));
-        section.push(FfonElement::new_str(format!("greetings so far: {}", self.greetings)));
+        section.push(FfonElement::new_str(format!(
+            "greetings so far: {}",
+            self.greetings
+        )));
         section.push(FfonElement::new_str(format!("host clock: {stamp}")));
 
         // A setting declared in plugin.json, read back through the host.
@@ -91,20 +96,48 @@ impl Plugin for Hello {
         // its own `assets/` directory; the other two must come back `none`, and the
         // guest cannot tell "refused" from "absent" — that is deliberate, so this
         // cannot be turned into a probe for what exists on the host.
-        section.push(FfonElement::new_str(match host::read_asset("hello-asset.txt") {
-            Some(bytes) => format!("asset bytes: {}", bytes.len()),
-            None => "asset bytes: refused".to_owned(),
-        }));
+        section.push(FfonElement::new_str(
+            match host::read_asset("hello-asset.txt") {
+                Some(bytes) => format!("asset bytes: {}", bytes.len()),
+                None => "asset bytes: refused".to_owned(),
+            },
+        ));
         section.push(FfonElement::new_str(
             match host::read_asset("../../Cargo.toml") {
                 Some(_) => "escape: LEAKED",
                 None => "escape: refused",
             },
         ));
-        section.push(FfonElement::new_str(match host::read_asset("no-such-file") {
-            Some(_) => "missing: LEAKED",
-            None => "missing: refused",
+        section.push(FfonElement::new_str(
+            match host::read_asset("no-such-file") {
+                Some(_) => "missing: LEAKED",
+                None => "missing: refused",
+            },
+        ));
+
+        // ABI 0.2 probes, read by sicompass's host tests.
+        //
+        // `std::fs` compiles and links (baseline `wasi:filesystem`), but this plugin
+        // asks for no `storage` or `filesystem` permission, so it has no preopened
+        // directory and every path must fail.
+        let root = std::fs::read_dir("/").is_ok();
+        let passwd = std::fs::read("/etc/passwd").is_ok();
+        section.push(FfonElement::new_str(if root || passwd {
+            "fs: LEAKED"
+        } else {
+            "fs: refused"
         }));
+        section.push(FfonElement::new_str(
+            match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                Ok(d) if d.as_secs() > 0 => "std clock: ok",
+                _ => "std clock: broken",
+            },
+        ));
+        // A message this plugin ships in locales/en-US.ftl, with an argument.
+        section.push(FfonElement::new_str(host::translate_args(
+            "hello-plugin-greetings",
+            &[("count".to_owned(), self.greetings.to_string())],
+        )));
 
         vec![FfonElement::Obj(section)]
     }
@@ -135,8 +168,14 @@ impl Plugin for Hello {
             return Vec::new();
         }
         vec![
-            ListItem { label: "world".to_owned(), data: "world".to_owned() },
-            ListItem { label: "sicompass".to_owned(), data: "sicompass".to_owned() },
+            ListItem {
+                label: "world".to_owned(),
+                data: "world".to_owned(),
+            },
+            ListItem {
+                label: "sicompass".to_owned(),
+                data: "sicompass".to_owned(),
+            },
         ]
     }
 
@@ -192,7 +231,10 @@ impl Plugin for Hello {
     }
 
     fn poll(&mut self) -> PollResult {
-        PollResult { at_root: self.path == "/", ..Default::default() }
+        PollResult {
+            at_root: self.path == "/",
+            ..Default::default()
+        }
     }
 
     // ---- Interactive dashboard --------------------------------------------
@@ -221,17 +263,41 @@ impl Plugin for Hello {
 
         write_str(&mut f, 0, 0, "hello, from inside the sandbox", GREEN);
         write_str(&mut f, 0, 1, &format!("grid: {cols}x{rows}"), GREY);
-        write_str(&mut f, 0, 2, &format!("frames rendered: {}", self.frames), GREY);
-        write_str(&mut f, 0, 3, &format!("greetings: {}", self.greetings), GREY);
+        write_str(
+            &mut f,
+            0,
+            2,
+            &format!("frames rendered: {}", self.frames),
+            GREY,
+        );
+        write_str(
+            &mut f,
+            0,
+            3,
+            &format!("greetings: {}", self.greetings),
+            GREY,
+        );
 
         if !self.last_input.is_empty() {
-            write_str(&mut f, 0, 5, &format!("last input: {}", self.last_input), WHITE);
+            write_str(
+                &mut f,
+                0,
+                5,
+                &format!("last input: {}", self.last_input),
+                WHITE,
+            );
         }
         if rows > 7 {
             // Ctrl+C twice, not Escape. The host forwards *every* key to an
             // interactive dashboard so a TUI can receive Escape, which means a
             // plugin cannot claim it as an exit key.
-            write_str(&mut f, 0, rows - 1, "type something. press Ctrl+C twice to leave", GREY);
+            write_str(
+                &mut f,
+                0,
+                rows - 1,
+                "type something. press Ctrl+C twice to leave",
+                GREY,
+            );
         }
 
         // Park the cursor where typed text appears, so a screen reader and a sighted
@@ -244,8 +310,15 @@ impl Plugin for Hello {
         self.last_input.push_str(text);
         // Keep it bounded: this is echoed into a fixed-width row every frame.
         if self.last_input.chars().count() > 60 {
-            self.last_input = self.last_input.chars().rev().take(60).collect::<Vec<_>>()
-                .into_iter().rev().collect();
+            self.last_input = self
+                .last_input
+                .chars()
+                .rev()
+                .take(60)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
         }
     }
 
@@ -268,7 +341,8 @@ impl Plugin for Hello {
             }
             // Ctrl+letter and friends arrive here rather than as text.
             Keysym::Ch(c) => {
-                self.last_input.push_str(&format!("<{}{}>", if key.ctrl { "^" } else { "" }, c));
+                self.last_input
+                    .push_str(&format!("<{}{}>", if key.ctrl { "^" } else { "" }, c));
                 true
             }
             // Nothing changed on screen, so no redraw is needed.

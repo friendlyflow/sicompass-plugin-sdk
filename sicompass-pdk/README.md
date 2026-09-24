@@ -35,18 +35,21 @@ impl Plugin for Hello {
 export_plugin!(Hello);
 ```
 
-Build, then wrap the core module as a component:
+Build:
 
 ```sh
-cargo build --release --target wasm32-unknown-unknown
-wasm-tools component new \
-    target/wasm32-unknown-unknown/release/my_plugin.wasm -o plugin.wasm
+cargo build --release --target wasm32-wasip2
+cp target/wasm32-wasip2/release/my_plugin.wasm plugin.wasm
 ```
 
-The target is `wasm32-unknown-unknown`, **not** a `wasip2` one. wasip2's standard
-library declares `wasi:*` imports that the host links none of, so a wasip2 guest
-would not instantiate — and tolerating those imports would reduce the import list
-from a capability set to a hint. No WASI also means no adapter is needed.
+The `wasm32-wasip2` target emits a component directly, so there is no separate
+`wasm-tools component new` step. Its `std` imports a few WASI p2 interfaces
+(stdio, environment, clocks, io, filesystem), and the host links exactly those as
+an inert baseline: stdout and stderr go to the host log, the environment is
+empty, and the filesystem has no directory at all unless `plugin.json` grants one.
+Everything that grants real authority (network, files, sockets) is linked only
+when the manifest asks, and the host audits the component's imports against the
+manifest before running it, so the import list is still the capability set.
 
 ## What you can call
 

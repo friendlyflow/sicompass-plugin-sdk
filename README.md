@@ -33,7 +33,7 @@ your `plugin.json` declares a non-empty `allowedHosts`. Reference something in
 
 `sicompass-sdk` builds two ways. With default features it is the full host-side
 crate. With `default-features = false` it is the portable half — FFON, tags,
-timeline records, dashboard types — and compiles for `wasm32-unknown-unknown`.
+timeline records, dashboard types — and compiles for the WASM guest targets.
 `sicompass-pdk` depends on it that way, so a plugin needs only the one crate.
 
 ## What's in here
@@ -83,15 +83,18 @@ export_plugin!(Hello);
 Build, then wrap the module as a component:
 
 ```sh
-cargo build --release --target wasm32-unknown-unknown
-wasm-tools component new \
-    target/wasm32-unknown-unknown/release/my_plugin.wasm -o plugin.wasm
+cargo build --release --target wasm32-wasip2
+cp target/wasm32-wasip2/release/my_plugin.wasm plugin.wasm
 ```
 
-The target is `wasm32-unknown-unknown`, not a `wasip2` one. wasip2's standard
-library declares `wasi:*` imports that the host links none of, and tolerating
-them would reduce the import list from a capability set to a hint. No WASI means
-no adapter is needed either.
+The `wasm32-wasip2` target emits a component directly, so there is no separate
+`wasm-tools component new` step. Its `std` imports a few WASI p2 interfaces
+(stdio, environment, clocks, io, filesystem), and the host links exactly those as
+an inert baseline: stdout and stderr go to the host log, the environment is
+empty, and the filesystem has no directory at all unless `plugin.json` grants one.
+Everything that grants real authority (network, files, sockets) is linked only
+when the manifest asks, and the host audits the component's imports against the
+manifest before running it, so the import list is still the capability set.
 
 Install it where Sicompass scans, with a manifest beside it:
 

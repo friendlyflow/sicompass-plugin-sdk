@@ -29,22 +29,29 @@
 //! Build:
 //!
 //! ```text
-//! cargo build --release --target wasm32-unknown-unknown
-//! wasm-tools component new target/wasm32-unknown-unknown/release/my_plugin.wasm -o plugin.wasm
+//! cargo build --release --target wasm32-wasip2
 //! ```
+//!
+//! The `wasm32-wasip2` target emits a component directly: the file in
+//! `target/wasm32-wasip2/release/` *is* the `plugin.wasm` to ship.
 //!
 //! # What a plugin can and cannot do
 //!
 //! A WASM guest has no syscalls, so its whole ability to affect the world is the
-//! set of functions the host links in. Those live in [`host`], and that is the
-//! entire list: `fetch`, `fetch_url_ffon`, `log`, `get_setting`, `now_millis`,
-//! `translate`, `read_asset`.
+//! set of functions the host links in, and its `plugin.json` decides most of them.
 //!
-//! `std::fs`, `std::net`, `std::process` and `SystemTime::now` all *compile* for
-//! `wasm32-unknown-unknown` and then fail at runtime. That is not an oversight to
-//! route around: use [`host::fetch`] for network, [`Plugin::load_config`] and
-//! [`Plugin::save_config`] for persistence, [`host::now_millis`] for the clock,
-//! and [`host::read_asset`] for your own data files.
+//! - Always there: [`host`] (`log`, `get_setting`, `now_millis`, `translate`,
+//!   `translate_args`, `read_asset`) and the parts of WASI that `std` needs and
+//!   that grant nothing: stdout and stderr (they go to the host log), an empty
+//!   environment, clocks (`SystemTime::now` and `Instant` work), randomness.
+//! - Only when `plugin.json` asks: [`net`] (`allowedHosts`), and files through
+//!   `std::fs` (`permissions.storage` for the plugin's own folder,
+//!   `permissions.filesystem` for folders the user grants). Without a grant,
+//!   `std::fs` finds no directory at all and every call returns an error.
+//!
+//! [`Plugin::load_config`] and [`Plugin::save_config`] remain the way to persist a
+//! small config without asking for any permission, and [`host::read_asset`] reads
+//! your own data files.
 //!
 //! # Shipping your own files
 //!
@@ -103,8 +110,8 @@ pub mod net {
 }
 
 pub use bindings::sicompass::plugin::types::{
-    Cell, CellAttrs, DashboardKind, DashboardRequest, Descriptor, Frame, Key, Keysym, ListItem,
-    NavigationRequest, PollResult, ProviderOp, SearchResult,
+    Cell, CellAttrs, CursorStyle, DashboardKind, DashboardRequest, Descriptor, Frame, Key, Keysym,
+    ListItem, NavigationRequest, Palette, PollResult, ProviderOp, SearchResult, Selection,
 };
 
 /// Naming your own assets: `assets::uri("my-plugin", "logo.png")` builds the
@@ -166,6 +173,7 @@ impl Default for Descriptor {
             supports_structural_edit: false,
             manual_dashboard_entry_allowed: true,
             dashboard_kind: DashboardKind::None,
+            dashboard_uses_app_undo: false,
         }
     }
 }
@@ -198,7 +206,9 @@ pub fn write_str(frame: &mut Frame, col: u16, row: u16, text: &str, fg: u32) {
     let width = frame.cols;
     for (i, ch) in text.chars().enumerate() {
         let Ok(offset) = u16::try_from(i) else { return };
-        let Some(c) = col.checked_add(offset) else { return };
+        let Some(c) = col.checked_add(offset) else {
+            return;
+        };
         if c >= width {
             return;
         }
@@ -221,11 +231,18 @@ pub fn blank_frame(cols: u16, rows: u16) -> Frame {
                 ch: ' ',
                 fg: 0xFFFF_FFFF,
                 bg: 0x0000_0000,
-                attrs: CellAttrs { bold: false, underline: false, reverse: false },
+                attrs: CellAttrs {
+                    bold: false,
+                    underline: false,
+                    reverse: false
+                },
             };
             len
         ],
         cursor: None,
+        selection: None,
+        half_gap_rows: Vec::new(),
+        cursor_style: CursorStyle::Block,
     }
 }
 
@@ -268,7 +285,10 @@ pub trait Plugin: Sized + 'static {
     /// at-root derived from [`Plugin::current_path`].
     fn poll(&mut self) -> PollResult {
         let p = self.current_path();
-        PollResult { at_root: p.is_empty() || p == "/", ..Default::default() }
+        PollResult {
+            at_root: p.is_empty() || p == "/",
+            ..Default::default()
+        }
     }
 
     // ---- Navigation --------------------------------------------------------
@@ -442,6 +462,16 @@ pub trait Plugin: Sized + 'static {
     fn dashboard_resize(&mut self, _rows: u16, _cols: u16) {}
     fn enter_dashboard(&mut self) {}
     fn leave_dashboard(&mut self) {}
+
+    /// Where the list cursor was when the dashboard was entered, as indices at
+    /// each level below your top level. Called just before
+    /// [`Plugin::enter_dashboard`], so a second view of your tree can open on the
+    /// row the user was on.
+    fn set_dashboard_entry(&mut self, _path: &[u32]) {}
+
+    /// The host's active colours, before each [`Plugin::dashboard_render`]. Use
+    /// them for anything that should look like the list around the dashboard.
+    fn set_dashboard_palette(&mut self, _palette: Palette) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -682,9 +712,17 @@ macro_rules! export_plugin {
                 fn leave_dashboard() {
                     __with(|p| $crate::Plugin::leave_dashboard(p))
                 }
+
+                fn set_dashboard_entry(path: ::std::vec::Vec<u32>) {
+                    __with(|p| $crate::Plugin::set_dashboard_entry(p, &path))
+                }
+
+                fn set_dashboard_palette(palette: $crate::Palette) {
+                    __with(|p| $crate::Plugin::set_dashboard_palette(p, palette))
+                }
             }
 
-            $crate::bindings::export_bindings!(__Component with_types_in $crate::bindings);
+    $crate::bindings::export_bindings!(__Component with_types_in $crate::bindings);
         };
     };
 }
@@ -708,10 +746,15 @@ mod tests {
 
     impl Plugin for Fake {
         fn new() -> Self {
-            Fake { path: "/".to_owned() }
+            Fake {
+                path: "/".to_owned(),
+            }
         }
         fn describe(&self) -> Descriptor {
-            Descriptor { name: "fake".to_owned(), ..Default::default() }
+            Descriptor {
+                name: "fake".to_owned(),
+                ..Default::default()
+            }
         }
         fn fetch(&mut self) -> Vec<FfonElement> {
             vec![FfonElement::new_str("x")]
@@ -730,8 +773,11 @@ mod tests {
     fn encode_decode_round_trips_a_tree() {
         let mut obj = FfonObject::new("section");
         obj.push(FfonElement::new_str("child"));
-        let original =
-            vec![FfonElement::new_str("plain"), FfonElement::Obj(obj), FfonElement::new_obj("bare")];
+        let original = vec![
+            FfonElement::new_str("plain"),
+            FfonElement::Obj(obj),
+            FfonElement::new_obj("bare"),
+        ];
         assert_eq!(decode(&encode(&original)), original);
     }
 

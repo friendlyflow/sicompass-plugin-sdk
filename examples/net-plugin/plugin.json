@@ -1,0 +1,10 @@
+{
+  "name": "net",
+  "displayName": "net",
+  "type": "wasm",
+  "entry": "plugin.wasm",
+  "version": "0.2.0",
+  "permissions": {
+    "allowedHosts": ["example.com"]
+  }
+}
