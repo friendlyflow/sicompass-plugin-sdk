@@ -1,7 +1,7 @@
 # Project Instructions
 
 This repo is the SDK every sicompass provider builds on, and the canonical
-definition of the WASM plugin interface. It holds three crates:
+definition of the WASM plugin interface. It holds four crates:
 
 - `sicompass-sdk` (the root): FFON, the `Provider` trait, tags, timeline, input,
   and behind the default `host` feature the parts only the app process uses
