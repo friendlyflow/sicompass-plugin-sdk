@@ -55,7 +55,14 @@ pub const HOST_FUNCTIONS: &[(&str, &str)] = &[
     ("sicompass:plugin/host", "translate-args"),
     ("sicompass:plugin/host", "read-asset"),
     ("sicompass:plugin/host", "moved-to"),
+    ("sicompass:plugin/host", "rendered"),
 ];
+
+/// The command id the host asks a page renderer (`"rendersPages": true`) to
+/// render a URL with, through the `execute-command` export: the URL is the
+/// selection. A command id rather than an export of its own, so plugins built
+/// before it still load. The answer comes back through `host.rendered`.
+pub const RENDER_URL_COMMAND: &str = "sicompass:render-url";
 
 /// `sicompass:plugin/net`: linked only for a plugin with `allowedHosts`.
 pub const NET_FUNCTIONS: &[(&str, &str)] = &[

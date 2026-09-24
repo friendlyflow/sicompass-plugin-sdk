@@ -137,6 +137,7 @@ fn host_imports_are_exactly_the_capability_set() {
         "read-asset",
         // Tells the host where the plugin is; grants nothing.
         "moved-to",
+        "rendered",
     ]
     .iter()
     .map(|s| s.to_string())

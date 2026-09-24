@@ -95,6 +95,12 @@ pub mod bindings {
 /// shipped yourself.
 pub mod host {
     pub use crate::bindings::sicompass::plugin::host::*;
+
+    /// Hand the host a page it asked this plugin to render (see
+    /// [`crate::Plugin::render_url`]).
+    pub fn page_rendered(url: &str, page: &[crate::FfonElement]) {
+        rendered(url, &crate::encode(page));
+    }
 }
 
 /// Network egress — available **only** if your `plugin.json` declares a non-empty
@@ -295,6 +301,8 @@ pub use sicompass_sdk::assets;
 /// The FFON data model, re-exported so a plugin needs one dependency, not two.
 pub use sicompass_sdk::ffon;
 pub use sicompass_sdk::{FfonElement, FfonObject, IdArray};
+/// The command id the host renders a URL with (see [`Plugin::render_url`]).
+pub use sicompass_sdk::plugin_abi::RENDER_URL_COMMAND;
 
 /// The multiline text field model the app edits `<input>` with. A dashboard that
 /// edits text itself (a card, a form) should keep an [`input::InputState`] and lay
@@ -640,6 +648,15 @@ pub trait Plugin: Sized + 'static {
         false
     }
 
+    /// The host asks for `url` rendered, for a link another program shows.
+    /// Only for a plugin whose `plugin.json` says `"rendersPages": true`.
+    /// Start the work and return `true`, then hand the page over with
+    /// [`host::page_rendered`] when it is ready (a render usually takes a
+    /// task). `false` declines, and the host renders the page's plain HTML.
+    fn render_url(&mut self, _url: &str) -> bool {
+        false
+    }
+
     fn create_element(&mut self, _key: &str) -> Option<FfonElement> {
         None
     }
@@ -912,7 +929,13 @@ macro_rules! export_plugin {
                     cmd: ::std::string::String,
                     selection: ::std::string::String,
                 ) -> bool {
-                    __with(|p| $crate::Plugin::execute_command(p, &cmd, &selection))
+                    __with(|p| {
+                        if cmd == $crate::RENDER_URL_COMMAND {
+                            $crate::Plugin::render_url(p, &selection)
+                        } else {
+                            $crate::Plugin::execute_command(p, &cmd, &selection)
+                        }
+                    })
                 }
 
                 fn create_element(

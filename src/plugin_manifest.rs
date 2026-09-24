@@ -125,6 +125,10 @@ pub struct PluginManifest {
     /// A paid service the plugin uses, shown before it is installed.
     #[serde(default)]
     pub service: Option<Service>,
+    /// It renders the web pages other programs link to (a browser): the host
+    /// asks it with [`crate::plugin_abi::RENDER_URL_COMMAND`]. Grants nothing.
+    #[serde(default, rename = "rendersPages")]
+    pub renders_pages: bool,
 }
 
 /// `permissions` in `plugin.json`. Everything defaults to "not granted".
@@ -232,6 +236,18 @@ mod tests {
         assert!(m.allowed_hosts().is_empty());
         assert_eq!(m.plugin_type, PluginType::Wasm);
         assert!(m.hot_reload);
+    }
+
+    #[test]
+    fn rendering_pages_is_declared_and_off_by_default() {
+        let plain =
+            parse_manifest(r#"{ "name": "x", "displayName": "x", "entry": "p.wasm" }"#).unwrap();
+        assert!(!plain.renders_pages);
+        let browser = parse_manifest(
+            r#"{ "name": "x", "displayName": "x", "entry": "p.wasm", "rendersPages": true }"#,
+        )
+        .unwrap();
+        assert!(browser.renders_pages);
     }
 
     #[test]
