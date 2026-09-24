@@ -270,6 +270,8 @@ impl Default for PollResult {
             announcement: None,
             dashboard_request: None,
             navigation_request: None,
+            structural_edit_here: true,
+            dashboard_here: true,
         }
     }
 }
@@ -362,14 +364,31 @@ pub trait Plugin: Sized + 'static {
 
     // ---- Per-frame state ---------------------------------------------------
 
-    /// Everything the host needs each frame. Default: nothing happening, and
-    /// at-root derived from [`Plugin::current_path`].
+    /// Everything the host needs each frame. Default: nothing happening,
+    /// at-root derived from [`Plugin::current_path`], and the per-level answers
+    /// from [`Plugin::structural_edit_here`] and [`Plugin::dashboard_here`].
+    /// Also called right after every navigation.
     fn poll(&mut self) -> PollResult {
         let p = self.current_path();
         PollResult {
             at_root: p.is_empty() || p == "/",
+            structural_edit_here: self.structural_edit_here(),
+            dashboard_here: self.dashboard_here(),
             ..Default::default()
         }
+    }
+
+    /// Whether structural editing is available at the current path, for a
+    /// plugin whose descriptor enables it but whose tree is editable only in
+    /// places. Default: everywhere.
+    fn structural_edit_here(&self) -> bool {
+        true
+    }
+
+    /// Whether the dashboard is offered at the current path. Default:
+    /// everywhere the descriptor's `dashboard_kind` allows.
+    fn dashboard_here(&self) -> bool {
+        true
     }
 
     // ---- Navigation --------------------------------------------------------
@@ -943,6 +962,14 @@ mod tests {
         assert!(p.poll().at_root);
         p.push_path("deep");
         assert!(!p.poll().at_root);
+    }
+
+    #[test]
+    fn default_poll_offers_editing_and_the_dashboard_everywhere() {
+        let mut p = Fake::new();
+        let r = p.poll();
+        assert!(r.structural_edit_here);
+        assert!(r.dashboard_here);
     }
 
     #[test]
