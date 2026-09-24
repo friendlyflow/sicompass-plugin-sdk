@@ -45,9 +45,12 @@
 //!   that grant nothing: stdout and stderr (they go to the host log), an empty
 //!   environment, clocks (`SystemTime::now` and `Instant` work), randomness.
 //! - Only when `plugin.json` asks: [`net`] (`allowedHosts`), and files through
-//!   `std::fs` (`permissions.storage` for the plugin's own folder,
-//!   `permissions.filesystem` for folders the user grants). Without a grant,
-//!   `std::fs` finds no directory at all and every call returns an error.
+//!   `std::fs` (`permissions.storage` for the plugin's own folder at
+//!   [`STORAGE_DIR`], `permissions.filesystem` for folders the user grants, at
+//!   their real paths). Without a grant, `std::fs` finds no directory at all and
+//!   every call returns an error.
+//! - Always, but confined to those folders: [`desktop`] (open a URL or a file,
+//!   trash and restore).
 //!
 //! [`Plugin::load_config`] and [`Plugin::save_config`] remain the way to persist a
 //! small config without asking for any permission, and [`host::read_asset`] reads
@@ -108,6 +111,23 @@ pub mod host {
 pub mod net {
     pub use crate::bindings::sicompass::plugin::net::*;
 }
+
+/// The user's desktop: open a URL or a file, move a file to the trash and back.
+///
+/// Every path must lie inside a directory your plugin was granted: its own
+/// [`STORAGE_DIR`] (with `permissions.storage`) or a folder from
+/// `permissions.filesystem` that the user approved. The host checks each one after
+/// resolving symlinks and refuses anything else.
+pub mod desktop {
+    pub use crate::bindings::sicompass::plugin::desktop::*;
+}
+
+/// Your plugin's own folder, when `plugin.json` asks for `"storage": true`.
+///
+/// It persists across restarts and updates, and nothing else can see it. Use it
+/// with plain `std::fs`: `std::fs::write("/storage/notes.json", ...)`. Without the
+/// permission there is no such directory and every call fails.
+pub const STORAGE_DIR: &str = "/storage";
 
 pub use bindings::sicompass::plugin::types::{
     Cell, CellAttrs, CursorStyle, DashboardKind, DashboardRequest, Descriptor, Frame, Key, Keysym,

@@ -1,0 +1,10 @@
+{
+  "name": "fs",
+  "displayName": "fs",
+  "type": "wasm",
+  "entry": "plugin.wasm",
+  "version": "0.2.0",
+  "permissions": {
+    "storage": true
+  }
+}

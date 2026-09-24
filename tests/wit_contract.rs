@@ -89,6 +89,12 @@ fn host_imports_are_exactly_the_capability_set() {
         "translate",
         // The same lookup with Fluent arguments. Reads the host's bundles only.
         "translate-args",
+        // interface desktop — always linked; every path is confined by the host
+        // to the plugin's granted directories.
+        "open-url",
+        "open-path",
+        "trash",
+        "restore",
         // Reads only files under `assets/` in the plugin's own install directory,
         // i.e. bytes the plugin shipped itself. No ambient filesystem.
         "read-asset",

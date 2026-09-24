@@ -62,6 +62,50 @@ pub const NET_FUNCTIONS: &[(&str, &str)] = &[
     ("sicompass:plugin/net", "fetch-url-ffon"),
 ];
 
+/// `sicompass:plugin/desktop`: always linked; its paths are confined to the
+/// plugin's granted directories by the host.
+pub const DESKTOP_FUNCTIONS: &[(&str, &str)] = &[
+    ("sicompass:plugin/desktop", "open-url"),
+    ("sicompass:plugin/desktop", "open-path"),
+    ("sicompass:plugin/desktop", "trash"),
+    ("sicompass:plugin/desktop", "restore"),
+];
+
+/// Where a plugin's own `storage` folder appears inside the guest. The host
+/// preopens `app_data_dir()/<name>` there, so a plugin never needs to know the
+/// host's directory layout.
+pub const STORAGE_GUEST_DIR: &str = "/storage";
+
+/// The part of a manifest the user approves, as one canonical line: sorted,
+/// deduplicated, stable across key order and case. Stored when the user grants
+/// access, and compared on every load, so an update asking for more is noticed.
+/// `storage` is not included: a folder of the plugin's own grants nothing.
+pub fn approval_fingerprint(m: &crate::plugin_manifest::PluginManifest) -> String {
+    fn list(items: &[String]) -> String {
+        let mut v: Vec<String> = items
+            .iter()
+            .map(|s| s.trim().to_ascii_lowercase())
+            .collect();
+        v.sort();
+        v.dedup();
+        v.join(",")
+    }
+    let p = &m.permissions;
+    format!(
+        "hosts={};filesystem={};process={};sockets={}",
+        list(&m.allowed_hosts()),
+        list(&p.filesystem),
+        list(&p.process),
+        list(&p.sockets)
+    )
+}
+
+/// Whether a manifest asks for anything the user has to approve.
+pub fn needs_approval(m: &crate::plugin_manifest::PluginManifest) -> bool {
+    let p = &m.permissions;
+    !(p.filesystem.is_empty() && p.process.is_empty() && p.sockets.is_empty())
+}
+
 /// Whether a `wasi:*` interface (version stripped) is in [`WASI_BASELINE`].
 pub fn is_wasi_baseline(interface: &str) -> bool {
     WASI_BASELINE.contains(&interface)
@@ -136,6 +180,7 @@ pub fn audit_imports(
 
         let table: &[(&str, &str)] = match interface {
             "sicompass:plugin/host" => HOST_FUNCTIONS,
+            "sicompass:plugin/desktop" => DESKTOP_FUNCTIONS,
             "sicompass:plugin/net" => {
                 if allowed_hosts.is_empty() {
                     return Err("plugin uses the network but declares no `allowedHosts` in \
@@ -304,6 +349,32 @@ mod tests {
             check_locale_prefix("hello", "helloworld-x = 1\n"),
             Err("helloworld-x".to_owned())
         );
+    }
+
+    #[test]
+    fn desktop_is_always_available() {
+        let imports = vec![iface(
+            "sicompass:plugin/desktop@0.2.0",
+            &["open-url", "trash"],
+        )];
+        audit_imports(&imports, &provider_export(), &Permissions::default(), &[]).unwrap();
+    }
+
+    #[test]
+    fn the_approval_fingerprint_is_canonical_and_notices_growth() {
+        let m = |json: &str| crate::plugin_manifest::parse_manifest(json).unwrap();
+        let a = m(r#"{ "name": "x", "displayName": "x", "entry": "p",
+                       "permissions": { "filesystem": ["~/B", "~/a"], "storage": true } }"#);
+        let b = m(r#"{ "name": "x", "displayName": "x", "entry": "p",
+                       "permissions": { "filesystem": ["~/a", "~/b", "~/a"] } }"#);
+        assert_eq!(approval_fingerprint(&a), approval_fingerprint(&b));
+        assert!(needs_approval(&a));
+        let more = m(r#"{ "name": "x", "displayName": "x", "entry": "p",
+                          "permissions": { "filesystem": ["~/a", "~/b", "~/c"] } }"#);
+        assert_ne!(approval_fingerprint(&a), approval_fingerprint(&more));
+        let own = m(r#"{ "name": "x", "displayName": "x", "entry": "p",
+                         "permissions": { "storage": true } }"#);
+        assert!(!needs_approval(&own));
     }
 
     #[test]

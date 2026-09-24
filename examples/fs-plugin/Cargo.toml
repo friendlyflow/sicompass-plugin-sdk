@@ -1,0 +1,22 @@
+# Independent workspace: only ever built for wasm32-wasip2.
+[workspace]
+
+[package]
+name = "fs-plugin"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+sicompass-pdk = { path = "../../sicompass-pdk" }
+
+[profile.release]
+# Guests ship as bytecode, and App Store builds interpret rather than JIT them, so
+# a small module matters more than aggressive inlining.
+opt-level = "s"
+lto = true
+strip = true

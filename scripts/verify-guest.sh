@@ -63,7 +63,7 @@ for EXAMPLE in "$SDK_ROOT"/examples/*/; do
   while IFS= read -r imp; do
     [ -n "$imp" ] || continue
     case "$imp" in
-      "sicompass:plugin/host@$ABI" | "sicompass:plugin/types@$ABI") ;;
+      "sicompass:plugin/host@$ABI" | "sicompass:plugin/types@$ABI" | "sicompass:plugin/desktop@$ABI") ;;
       "sicompass:plugin/net@$ABI") USES_NET=yes ;;
       sicompass:plugin/*) fail "$NAME: imports $imp, but this SDK is ABI $ABI" ;;
       *)
