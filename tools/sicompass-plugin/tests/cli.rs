@@ -145,12 +145,12 @@ fn pack_refuses_a_network_plugin_without_allowed_hosts() {
 }
 
 #[test]
-fn a_catalog_is_checked_signed_and_verified() {
+fn a_store_is_checked_signed_and_verified() {
     let dir = tempfile::tempdir().unwrap();
-    let public = keypair(dir.path(), "catalog.key");
+    let public = keypair(dir.path(), "store.key");
     let (_, plugin_pk) = sicompass_sdk::package::generate_keypair().unwrap();
     std::fs::write(
-        dir.path().join("catalog.json"),
+        dir.path().join("store.json"),
         format!(
             r#"{{ "version": 1, "plugins": [ {{ "name": "hello",
                  "repo": "friendlyflow/hello_plugin_sicompass", "pubkey": "{plugin_pk}" }} ] }}"#
@@ -158,32 +158,32 @@ fn a_catalog_is_checked_signed_and_verified() {
     )
     .unwrap();
     let (ok, out) = tool(
-        &["catalog-sign", "--key", "catalog.key", "catalog.json"],
+        &["store-sign", "--key", "store.key", "store.json"],
         dir.path(),
     );
     assert!(ok && out.contains("1 plugins"), "{out}");
     let (ok, out) = tool(
-        &["catalog-verify", "--pubkey", &public, "catalog.json"],
+        &["store-verify", "--pubkey", &public, "store.json"],
         dir.path(),
     );
     assert!(ok, "{out}");
 
     // Edited after signing: refused.
-    let path = dir.path().join("catalog.json");
+    let path = dir.path().join("store.json");
     let edited = std::fs::read_to_string(&path)
         .unwrap()
         .replace("hello_plugin", "evil_plugin");
     std::fs::write(&path, edited).unwrap();
     let (ok, out) = tool(
-        &["catalog-verify", "--pubkey", &public, "catalog.json"],
+        &["store-verify", "--pubkey", &public, "store.json"],
         dir.path(),
     );
     assert!(!ok && out.contains("signature"), "{out}");
 
-    // A malformed catalog is not signed at all.
+    // A malformed store is not signed at all.
     std::fs::write(&path, r#"{ "version": 9 }"#).unwrap();
     let (ok, out) = tool(
-        &["catalog-sign", "--key", "catalog.key", "catalog.json"],
+        &["store-sign", "--key", "store.key", "store.json"],
         dir.path(),
     );
     assert!(!ok && out.contains("format"), "{out}");

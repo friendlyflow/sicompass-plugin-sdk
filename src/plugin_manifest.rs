@@ -145,7 +145,7 @@ pub struct Permissions {
 /// before install. The plugin itself stays free (docs/plugin-platform.md §1).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Service {
-    /// Catalog tier id, for example `friendlyflow/cloud`.
+    /// Store tier id, for example `friendlyflow/cloud`.
     pub tier: String,
     /// A Fluent id in the plugin's `locales/`: what the service does.
     #[serde(default)]

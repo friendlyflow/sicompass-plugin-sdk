@@ -14,7 +14,7 @@
 //! the archive afterwards, and a release is one signature to check.
 //!
 //! Keys are Ed25519, stored as base64 of the 32-byte secret (a seed). A public key
-//! is base64 of its 32 bytes, which is what the catalog lists.
+//! is base64 of its 32 bytes, which is what the store lists.
 
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};

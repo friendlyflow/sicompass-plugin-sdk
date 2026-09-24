@@ -43,10 +43,10 @@ pub mod plugin_manifest;
 // Plugin releases (archive, release.json, signatures): the tool and the Store.
 #[cfg(feature = "package")]
 pub mod package;
-// The Store's catalog: plugins, their signing keys, the paid tiers.
-#[cfg(feature = "package")]
-pub mod catalog;
+// The store: the plugins it offers, their signing keys, the paid tiers.
 pub mod provider;
+#[cfg(feature = "package")]
+pub mod store;
 pub mod tags;
 pub mod timeline;
 

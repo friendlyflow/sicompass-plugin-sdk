@@ -1,32 +1,32 @@
-//! The plugin catalog: which plugins the Store offers, whose keys sign them, and
-//! the paid tiers. Behind the `package` feature, next to the release format.
+//! The store: which plugins it offers, whose keys sign them, and the paid tiers.
+//! Behind the `package` feature, next to the release format.
 //!
-//! The catalog lives in the sicompass repo (`lib/lib_store/catalog.json` and
-//! `catalog.json.sig`). It holds **no versions**: the Store reads each plugin's
+//! It lives in the sicompass repo (`lib/lib_store/store.json` and
+//! `store.json.sig`). It holds **no versions**: the Store reads each plugin's
 //! signed `release.json` from its repo's latest GitHub release, so releasing a
-//! plugin never needs a sicompass commit. The catalog changes only when a plugin,
-//! a key or a tier is added, and only a trusted catalog key can make the app
-//! believe it (docs/plugin-platform.md §8).
+//! plugin never needs a sicompass commit. `store.json` changes only when a plugin,
+//! a key or a tier is added, and only a trusted store key can make the app believe
+//! it (docs/plugin-platform.md §8).
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub const CATALOG_FILE: &str = "catalog.json";
-pub const CATALOG_SIGNATURE_FILE: &str = "catalog.json.sig";
+pub const STORE_FILE: &str = "store.json";
+pub const STORE_SIGNATURE_FILE: &str = "store.json.sig";
 
-/// The catalog format version this SDK reads.
-pub const CATALOG_VERSION: u32 = 1;
+/// The store format version this SDK reads.
+pub const STORE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Catalog {
+pub struct Store {
     pub version: u32,
     /// Paid tiers by id (`friendlyflow/cloud`), each with its certificate issuer.
     #[serde(default)]
     pub tiers: BTreeMap<String, Tier>,
     #[serde(default)]
-    pub plugins: Vec<CatalogEntry>,
+    pub plugins: Vec<StoreEntry>,
 }
 
 /// A paid tier: who issues its certificates and where to buy it.
@@ -44,7 +44,7 @@ pub struct Tier {
 /// One plugin the Store offers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CatalogEntry {
+pub struct StoreEntry {
     /// The plugin's manifest `name`, also its install directory.
     pub name: String,
     /// `owner/repo` on GitHub, where its releases are published.
@@ -66,7 +66,7 @@ pub struct CatalogEntry {
     pub revoked: Vec<String>,
 }
 
-impl CatalogEntry {
+impl StoreEntry {
     /// Where a file of this plugin's latest release is downloaded from.
     pub fn release_url(&self, file: &str) -> String {
         format!(
@@ -83,22 +83,22 @@ impl CatalogEntry {
     }
 }
 
-impl Catalog {
+impl Store {
     /// Parse and check the structure: the format version, unique names, sane
     /// repos and keys, and every service naming a listed tier.
     pub fn parse(json: &[u8]) -> Result<Self, String> {
-        let c: Catalog =
-            serde_json::from_slice(json).map_err(|e| format!("catalog does not parse: {e}"))?;
-        if c.version != CATALOG_VERSION {
+        let c: Store =
+            serde_json::from_slice(json).map_err(|e| format!("store does not parse: {e}"))?;
+        if c.version != STORE_VERSION {
             return Err(format!(
-                "catalog format {} is not the one this sicompass reads ({CATALOG_VERSION})",
+                "store format {} is not the one this sicompass reads ({STORE_VERSION})",
                 c.version
             ));
         }
         let mut seen = std::collections::HashSet::new();
         for p in &c.plugins {
             if !seen.insert(p.name.as_str()) {
-                return Err(format!("catalog lists `{}` twice", p.name));
+                return Err(format!("store lists `{}` twice", p.name));
             }
             let valid_name = !p.name.is_empty()
                 && p.name
@@ -106,7 +106,7 @@ impl Catalog {
                     .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_');
             if !valid_name {
                 return Err(format!(
-                    "catalog plugin name `{}` is not a plain name",
+                    "store plugin name `{}` is not a plain name",
                     p.name
                 ));
             }
@@ -125,7 +125,7 @@ impl Catalog {
                 && !c.tiers.contains_key(tier)
             {
                 return Err(format!(
-                    "`{}`: service tier `{tier}` is not in the catalog",
+                    "`{}`: service tier `{tier}` is not in the store",
                     p.name
                 ));
             }
@@ -136,7 +136,7 @@ impl Catalog {
         Ok(c)
     }
 
-    pub fn entry(&self, name: &str) -> Option<&CatalogEntry> {
+    pub fn entry(&self, name: &str) -> Option<&StoreEntry> {
         self.plugins.iter().find(|p| p.name == name)
     }
 }
@@ -153,20 +153,16 @@ fn check_key(b64: &str) -> Result<(), String> {
     }
 }
 
-/// Verify a catalog's signature against any of `trusted` public keys (the app
-/// trusts two: the working catalog key and the cold backup), then parse it.
-pub fn verify_catalog(
-    json: &[u8],
-    signature_b64: &str,
-    trusted: &[&str],
-) -> Result<Catalog, String> {
+/// Verify a store's signature against any of `trusted` public keys (the app
+/// trusts two: the working store key and the cold backup), then parse it.
+pub fn verify_store(json: &[u8], signature_b64: &str, trusted: &[&str]) -> Result<Store, String> {
     if !trusted
         .iter()
         .any(|k| crate::package::verify(json, signature_b64, k).is_ok())
     {
-        return Err("the catalog's signature matches no trusted catalog key".to_owned());
+        return Err("the store's signature matches no trusted store key".to_owned());
     }
-    Catalog::parse(json)
+    Store::parse(json)
 }
 
 #[cfg(test)]
@@ -174,7 +170,7 @@ mod tests {
     use super::*;
     use crate::package::{generate_keypair, sign};
 
-    fn catalog(plugin_key: &str, tier_key: &str) -> String {
+    fn store(plugin_key: &str, tier_key: &str) -> String {
         format!(
             r#"{{
               "version": 1,
@@ -191,15 +187,15 @@ mod tests {
     }
 
     #[test]
-    fn a_signed_catalog_verifies_with_either_trusted_key() {
+    fn a_signed_store_verifies_with_either_trusted_key() {
         let (_, plugin_pk) = generate_keypair().unwrap();
         let (_, tier_pk) = generate_keypair().unwrap();
-        let json = catalog(&plugin_pk, &tier_pk);
+        let json = store(&plugin_pk, &tier_pk);
         let (working, working_pk) = generate_keypair().unwrap();
         let (_, backup_pk) = generate_keypair().unwrap();
         let sig = sign(json.as_bytes(), &working).unwrap();
 
-        let c = verify_catalog(json.as_bytes(), &sig, &[&backup_pk, &working_pk]).unwrap();
+        let c = verify_store(json.as_bytes(), &sig, &[&backup_pk, &working_pk]).unwrap();
         let notes = c.entry("notes").unwrap();
         assert_eq!(
             notes.release_url("release.json"),
@@ -210,17 +206,17 @@ mod tests {
 
         // Another key, or an edit after signing: refused.
         let (_, stranger) = generate_keypair().unwrap();
-        assert!(verify_catalog(json.as_bytes(), &sig, &[&stranger]).is_err());
+        assert!(verify_store(json.as_bytes(), &sig, &[&stranger]).is_err());
         let edited = json.replace("notes_plugin_sicompass", "evil_plugin");
-        assert!(verify_catalog(edited.as_bytes(), &sig, &[&working_pk]).is_err());
+        assert!(verify_store(edited.as_bytes(), &sig, &[&working_pk]).is_err());
     }
 
     #[test]
     fn structural_mistakes_are_named() {
         let (_, k) = generate_keypair().unwrap();
-        let base = catalog(&k, &k);
+        let base = store(&k, &k);
         let bad =
-            |from: &str, to: &str| Catalog::parse(base.replace(from, to).as_bytes()).unwrap_err();
+            |from: &str, to: &str| Store::parse(base.replace(from, to).as_bytes()).unwrap_err();
         assert!(bad("\"version\": 1", "\"version\": 2").contains("format"));
         assert!(bad("friendlyflow/notes_plugin_sicompass", "no-slash").contains("owner/name"));
         assert!(bad("\"name\": \"notes\"", "\"name\": \"../x\"").contains("plain name"));
@@ -232,6 +228,6 @@ mod tests {
             )
             .contains("tier")
         );
-        Catalog::parse(base.as_bytes()).unwrap();
+        Store::parse(base.as_bytes()).unwrap();
     }
 }

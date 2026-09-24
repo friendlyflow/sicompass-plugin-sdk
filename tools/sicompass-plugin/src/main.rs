@@ -32,7 +32,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Create a signing key. Writes the secret to --out (never to stdout) and
-    /// prints the public key, which is what the catalog lists.
+    /// prints the public key, which is what the store lists.
     Keygen {
         #[arg(long)]
         out: PathBuf,
@@ -57,21 +57,21 @@ enum Command {
         #[arg(long, default_value = "dist")]
         dist: PathBuf,
     },
-    /// Check a catalog's structure and sign it, writing `<catalog>.sig`.
-    CatalogSign {
+    /// Check a store's structure and sign it, writing `<store>.sig`.
+    StoreSign {
         #[arg(long)]
         key: PathBuf,
-        catalog: PathBuf,
+        store: PathBuf,
     },
-    /// Verify a catalog against one or more trusted public keys (base64).
-    CatalogVerify {
+    /// Verify a store against one or more trusted public keys (base64).
+    StoreVerify {
         #[arg(long = "pubkey", required = true)]
         pubkeys: Vec<String>,
-        catalog: PathBuf,
+        store: PathBuf,
     },
     /// Verify a packed and signed release the way the Store does.
     Verify {
-        /// The public key (base64) the catalog lists for this plugin.
+        /// The public key (base64) the store lists for this plugin.
         #[arg(long)]
         pubkey: String,
         #[arg(long, default_value = "dist")]
@@ -89,8 +89,8 @@ fn main() -> ExitCode {
         Command::Pack { dir, out } => pack(&dir, &out),
         Command::Sign { key, dist } => sign(&key, &dist),
         Command::Verify { pubkey, dist } => verify(&pubkey, &dist),
-        Command::CatalogSign { key, catalog } => catalog_sign(&key, &catalog),
-        Command::CatalogVerify { pubkeys, catalog } => catalog_verify(&pubkeys, &catalog),
+        Command::StoreSign { key, store } => store_sign(&key, &store),
+        Command::StoreVerify { pubkeys, store } => store_verify(&pubkeys, &store),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -287,21 +287,21 @@ fn verify(pubkey: &str, dist: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn sig_path(catalog: &Path) -> PathBuf {
-    let mut name = catalog.file_name().unwrap_or_default().to_os_string();
+fn sig_path(store: &Path) -> PathBuf {
+    let mut name = store.file_name().unwrap_or_default().to_os_string();
     name.push(".sig");
-    catalog.with_file_name(name)
+    store.with_file_name(name)
 }
 
-fn catalog_sign(key: &Path, catalog: &Path) -> Result<(), String> {
-    let json = read(catalog)?;
-    let parsed = sicompass_sdk::catalog::Catalog::parse(&json)?;
+fn store_sign(key: &Path, store: &Path) -> Result<(), String> {
+    let json = read(store)?;
+    let parsed = sicompass_sdk::store::Store::parse(&json)?;
     let secret = read_secret(key)?;
     let sig = package::sign(&json, &secret)?;
-    std::fs::write(sig_path(catalog), format!("{sig}\n")).map_err(|e| e.to_string())?;
+    std::fs::write(sig_path(store), format!("{sig}\n")).map_err(|e| e.to_string())?;
     println!(
         "signed {} ({} plugins, {} tiers) with {}",
-        catalog.display(),
+        store.display(),
         parsed.plugins.len(),
         parsed.tiers.len(),
         package::public_key_of(&secret)?
@@ -309,15 +309,15 @@ fn catalog_sign(key: &Path, catalog: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn catalog_verify(pubkeys: &[String], catalog: &Path) -> Result<(), String> {
-    let json = read(catalog)?;
-    let sig = String::from_utf8(read(&sig_path(catalog))?)
+fn store_verify(pubkeys: &[String], store: &Path) -> Result<(), String> {
+    let json = read(store)?;
+    let sig = String::from_utf8(read(&sig_path(store))?)
         .map_err(|_| "the signature file is not text".to_owned())?;
     let keys: Vec<&str> = pubkeys.iter().map(String::as_str).collect();
-    let c = sicompass_sdk::catalog::verify_catalog(&json, &sig, &keys)?;
+    let c = sicompass_sdk::store::verify_store(&json, &sig, &keys)?;
     println!(
         "{} verifies: {} plugins, {} tiers",
-        catalog.display(),
+        store.display(),
         c.plugins.len(),
         c.tiers.len()
     );
