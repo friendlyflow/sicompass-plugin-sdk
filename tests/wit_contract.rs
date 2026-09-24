@@ -111,6 +111,8 @@ fn host_imports_are_exactly_the_capability_set() {
         "cancel",
         "emit",
         "cancelled",
+        "send",
+        "receive",
         // interface process — linked ONLY when plugin.json lists programs in
         // `permissions.process`, which the user approves. The one capability that
         // reaches outside the sandbox.

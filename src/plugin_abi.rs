@@ -92,6 +92,8 @@ pub const TASK_FUNCTIONS: &[(&str, &str)] = &[
     ("sicompass:plugin/tasks", "cancel"),
     ("sicompass:plugin/tasks", "emit"),
     ("sicompass:plugin/tasks", "cancelled"),
+    ("sicompass:plugin/tasks", "send"),
+    ("sicompass:plugin/tasks", "receive"),
 ];
 
 /// `sicompass:plugin/process`: linked only for a plugin whose

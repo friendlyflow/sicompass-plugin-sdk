@@ -10,6 +10,8 @@
 //! | `spin` | - | emits `running`, loops until asked to stop, returns `stopped` |
 //! | `busy` | - | emits `running`, computes forever without checking; only the host can stop it |
 //! | `nested` | - | tries to spawn a task from inside a task (must be refused) |
+//! | `serve` | - | lives on, answering every message sent to it with `echo <message>`; `bye` ends it with `served` |
+//! | `send` | `<task id> <message>` | sends the message to that task (`tasks.send`) |
 //! | `cancel` | task id | cancels it |
 //!
 //! Lines: `started <id>`, `<id> progress <text>`, `<id> done ok <text>`,
@@ -53,7 +55,7 @@ impl Plugin for Task {
     }
 
     fn commands(&self) -> Vec<String> {
-        ["count", "sleep", "spin", "busy", "nested", "cancel"]
+        ["count", "sleep", "spin", "busy", "nested", "serve", "send", "cancel"]
             .map(String::from)
             .to_vec()
     }
@@ -64,6 +66,12 @@ impl Plugin for Task {
         arg: &str,
         _elem_type: i32,
     ) -> Result<Option<FfonElement>, String> {
+        if cmd == "send" {
+            let (id, message) = arg.split_once(' ').unwrap_or((arg, ""));
+            let id: u64 = id.parse().map_err(|_| format!("not an id: {id}"))?;
+            tasks::send(id, message.as_bytes())?;
+            return Ok(None);
+        }
         if cmd == "cancel" {
             let id: u64 = arg.parse().map_err(|_| format!("not an id: {arg}"))?;
             tasks::cancel(id);
@@ -105,6 +113,14 @@ impl Plugin for Task {
                 }
             }
             "nested" => tasks::spawn("count", b"1").map(|id| format!("spawned {id}").into_bytes()),
+            "serve" => loop {
+                match tasks::receive(1000) {
+                    Some(m) if m == b"bye" => return Ok(b"served".to_vec()),
+                    Some(m) => tasks::emit(format!("echo {}", String::from_utf8_lossy(&m)).as_bytes()),
+                    None if tasks::cancelled() => return Ok(b"stopped".to_vec()),
+                    None => {}
+                }
+            },
             other => Err(format!("no task named {other}")),
         }
     }
