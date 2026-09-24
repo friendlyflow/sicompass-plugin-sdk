@@ -57,6 +57,18 @@ enum Command {
         #[arg(long, default_value = "dist")]
         dist: PathBuf,
     },
+    /// Check a catalog's structure and sign it, writing `<catalog>.sig`.
+    CatalogSign {
+        #[arg(long)]
+        key: PathBuf,
+        catalog: PathBuf,
+    },
+    /// Verify a catalog against one or more trusted public keys (base64).
+    CatalogVerify {
+        #[arg(long = "pubkey", required = true)]
+        pubkeys: Vec<String>,
+        catalog: PathBuf,
+    },
     /// Verify a packed and signed release the way the Store does.
     Verify {
         /// The public key (base64) the catalog lists for this plugin.
@@ -77,6 +89,8 @@ fn main() -> ExitCode {
         Command::Pack { dir, out } => pack(&dir, &out),
         Command::Sign { key, dist } => sign(&key, &dist),
         Command::Verify { pubkey, dist } => verify(&pubkey, &dist),
+        Command::CatalogSign { key, catalog } => catalog_sign(&key, &catalog),
+        Command::CatalogVerify { pubkeys, catalog } => catalog_verify(&pubkeys, &catalog),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -269,6 +283,43 @@ fn verify(pubkey: &str, dist: &Path) -> Result<(), String> {
     println!(
         "{} {} verifies: signature, archive hash, manifest, imports, locales",
         info.name, info.version
+    );
+    Ok(())
+}
+
+fn sig_path(catalog: &Path) -> PathBuf {
+    let mut name = catalog.file_name().unwrap_or_default().to_os_string();
+    name.push(".sig");
+    catalog.with_file_name(name)
+}
+
+fn catalog_sign(key: &Path, catalog: &Path) -> Result<(), String> {
+    let json = read(catalog)?;
+    let parsed = sicompass_sdk::catalog::Catalog::parse(&json)?;
+    let secret = read_secret(key)?;
+    let sig = package::sign(&json, &secret)?;
+    std::fs::write(sig_path(catalog), format!("{sig}\n")).map_err(|e| e.to_string())?;
+    println!(
+        "signed {} ({} plugins, {} tiers) with {}",
+        catalog.display(),
+        parsed.plugins.len(),
+        parsed.tiers.len(),
+        package::public_key_of(&secret)?
+    );
+    Ok(())
+}
+
+fn catalog_verify(pubkeys: &[String], catalog: &Path) -> Result<(), String> {
+    let json = read(catalog)?;
+    let sig = String::from_utf8(read(&sig_path(catalog))?)
+        .map_err(|_| "the signature file is not text".to_owned())?;
+    let keys: Vec<&str> = pubkeys.iter().map(String::as_str).collect();
+    let c = sicompass_sdk::catalog::verify_catalog(&json, &sig, &keys)?;
+    println!(
+        "{} verifies: {} plugins, {} tiers",
+        catalog.display(),
+        c.plugins.len(),
+        c.tiers.len()
     );
     Ok(())
 }

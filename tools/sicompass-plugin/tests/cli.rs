@@ -143,3 +143,48 @@ fn pack_refuses_a_network_plugin_without_allowed_hosts() {
     let (ok, out) = tool(&["pack"], dir.path());
     assert!(!ok && out.contains("allowedHosts"), "{out}");
 }
+
+#[test]
+fn a_catalog_is_checked_signed_and_verified() {
+    let dir = tempfile::tempdir().unwrap();
+    let public = keypair(dir.path(), "catalog.key");
+    let (_, plugin_pk) = sicompass_sdk::package::generate_keypair().unwrap();
+    std::fs::write(
+        dir.path().join("catalog.json"),
+        format!(
+            r#"{{ "version": 1, "plugins": [ {{ "name": "hello",
+                 "repo": "friendlyflow/hello_plugin_sicompass", "pubkey": "{plugin_pk}" }} ] }}"#
+        ),
+    )
+    .unwrap();
+    let (ok, out) = tool(
+        &["catalog-sign", "--key", "catalog.key", "catalog.json"],
+        dir.path(),
+    );
+    assert!(ok && out.contains("1 plugins"), "{out}");
+    let (ok, out) = tool(
+        &["catalog-verify", "--pubkey", &public, "catalog.json"],
+        dir.path(),
+    );
+    assert!(ok, "{out}");
+
+    // Edited after signing: refused.
+    let path = dir.path().join("catalog.json");
+    let edited = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("hello_plugin", "evil_plugin");
+    std::fs::write(&path, edited).unwrap();
+    let (ok, out) = tool(
+        &["catalog-verify", "--pubkey", &public, "catalog.json"],
+        dir.path(),
+    );
+    assert!(!ok && out.contains("signature"), "{out}");
+
+    // A malformed catalog is not signed at all.
+    std::fs::write(&path, r#"{ "version": 9 }"#).unwrap();
+    let (ok, out) = tool(
+        &["catalog-sign", "--key", "catalog.key", "catalog.json"],
+        dir.path(),
+    );
+    assert!(!ok && out.contains("format"), "{out}");
+}
