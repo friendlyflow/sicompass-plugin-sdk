@@ -8,8 +8,9 @@ version = "0.2.0"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "Cloud backup for sicompass plugins: store snapshots, the backup protocol over the plugin's net, debouncing and the backup row"
-repository = "https://github.com/friendlyflow/payments_plugin_sicompass"
-# Used by git tag by the plugins that back up, never from crates.io.
+repository = "https://github.com/friendlyflow/sicompass-plugin-sdk"
+# Plugins take it by git from the SDK repo (cargo finds it by name), pinned
+# to a rev or an SDK release tag. Not on crates.io (yet).
 publish = false
 
 [dependencies]

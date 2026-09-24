@@ -1,4 +1,4 @@
-# payments_plugin_sicompass
+# sicompass-payments
 
 *Cloud backup for Sicompass plugins.*
 
@@ -31,11 +31,12 @@ own data whether or not they pay.
 
 ## Using it
 
-Add it to your plugin by git:
+It lives in the SDK repo, next to `sicompass-pdk`. Add it to your plugin by git,
+pinned to a commit (or an SDK release tag):
 
 ```toml
 [dependencies]
-sicompass-payments = { git = "https://github.com/friendlyflow/payments_plugin_sicompass", tag = "v0.2.0" }
+sicompass-payments = { git = "https://github.com/friendlyflow/sicompass-plugin-sdk", rev = "<commit>" }
 ```
 
 Your plugin learns where the user stands, and gets the token for your own
@@ -46,6 +47,8 @@ under your prefix: `cloud::MESSAGES` lists the ids. The notes plugin
 
 ## Building from source
 
+From this folder, in the SDK repo's dev shell:
+
 ```bash
 nix develop                            # the toolchain, with wasm32-wasip2
 cargo test
@@ -55,8 +58,6 @@ cargo check --target wasm32-wasip2     # the build plugins link
 ## Related repositories
 
 - [sicompass](https://github.com/friendlyflow/sicompass), the application
-- [sicompass-plugin-sdk](https://github.com/friendlyflow/sicompass-plugin-sdk),
-  the SDK and the WASM plugin kit
 - [notes_plugin_sicompass](https://github.com/friendlyflow/notes_plugin_sicompass)
   and
   [projectmanagement_plugin_sicompass](https://github.com/friendlyflow/projectmanagement_plugin_sicompass),
@@ -73,7 +74,7 @@ Join the conversation on
 
 If you are creating an open source application under a license compatible with
 the GNU GPL license v3, you may use this project under the terms of the GPLv3.
-See [LICENSE](LICENSE).
+See [LICENSE](../LICENSE).
 
 ## Contributing
 

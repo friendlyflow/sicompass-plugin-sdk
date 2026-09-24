@@ -1,7 +1,7 @@
 # Project Instructions
 
 This repo is the SDK every sicompass provider builds on, and the canonical
-definition of the WASM plugin interface. It holds four crates:
+definition of the WASM plugin interface. It holds five crates:
 
 - `sicompass-sdk` (the root): FFON, the `Provider` trait, tags, timeline, input,
   and behind the default `host` feature the parts only the app process uses
@@ -9,6 +9,18 @@ definition of the WASM plugin interface. It holds four crates:
 - `sicompass-pdk` (`sicompass-pdk/`): the guest kit. The `Plugin` trait and
   `export_plugin!`, over wit-bindgen. On crates.io. Its own workspace root,
   because it only builds for a WASM target.
+- `sicompass-payments` (`sicompass-payments/`): cloud backup for plugins that
+  keep their data in their own folder (sicompass's notes and board plugins, and
+  any third party's). Snapshots, the backup protocol over the caller's `send`
+  (a plugin's `net::fetch`), the debounce, and `cloud::Cloud`, the whole
+  service as a plugin runs it, over a small `Host` trait. Everything in it runs
+  inside a sandboxed plugin: no threads, no HTTP client of its own, no app
+  configuration. Its own workspace root, taken by git (not on crates.io).
+  Certificates, tiers, checkout and redeem are **not** here, on purpose: they
+  are the app's (sicompass's Store), and a plugin reaches them only through the
+  host's `license` interface. The paywall is on the service, never on the data.
+  Test it with `cargo test` and `cargo check --target wasm32-wasip2` in its
+  folder. Its `tests/live_server.rs` runs by hand against `../server`.
 - `examples/*`: guest plugins, also their own workspace roots. They double as
   the fixtures sicompass tests its host against.
 - `tools/sicompass-plugin`: the release tool (keygen, pack, sign, verify), its
