@@ -73,7 +73,11 @@ pub const DESKTOP_FUNCTIONS: &[(&str, &str)] = &[
 
 /// `sicompass:plugin/license`: always linked; it answers only whether the user
 /// holds a tier, never with a key or a certificate.
-pub const LICENSE_FUNCTIONS: &[(&str, &str)] = &[("sicompass:plugin/license", "status")];
+pub const LICENSE_FUNCTIONS: &[(&str, &str)] = &[
+    ("sicompass:plugin/license", "status"),
+    ("sicompass:plugin/license", "standing"),
+    ("sicompass:plugin/license", "token"),
+];
 
 /// `sicompass:plugin/tasks`: always linked. A task is the same plugin, running
 /// longer, with no more access.

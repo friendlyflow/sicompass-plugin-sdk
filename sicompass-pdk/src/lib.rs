@@ -122,12 +122,15 @@ pub mod desktop {
     pub use crate::bindings::sicompass::plugin::desktop::*;
 }
 
-/// Whether the user holds one of your paid tiers, if you gate features of
-/// your own: [`license::status`]`("you/pro")` answers `active`, `grace`,
-/// `expired` or `missing`. The host checks the certificate against the issuer
-/// key the store list names for that tier; you never handle keys. Keep `grace`
-/// working (with a notice), disclose paid features in your store entry, and
-/// never gate the user's own data.
+/// Where the user stands with a paid tier, and the credential for yours.
+///
+/// [`license::standing`]`("you/cloud")` answers `active`, `grace`, `expired` or
+/// `missing` with a day count; the host checks the certificate against the
+/// issuer key the store list names for that tier, so you never handle keys.
+/// [`license::token`] gives the user's redeem token for the tier your
+/// `plugin.json` names as `service.tier` (and nothing for any other), to
+/// authenticate to your service. Keep `grace` working (with a notice), disclose
+/// paid features in your store entry, and never gate the user's own data.
 pub mod license {
     pub use crate::bindings::sicompass::plugin::license::*;
 }
