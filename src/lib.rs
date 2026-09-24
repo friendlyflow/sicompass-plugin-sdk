@@ -63,6 +63,9 @@ pub mod fs_trash;
 // two divergent ones.
 #[cfg(feature = "host")]
 pub mod localize;
+// The answer to a plugin's `license.status(tier)`, registered by the Store.
+#[cfg(feature = "host")]
+pub mod license;
 // `BuiltinManifest` describes a compiled-in provider — a host concept by
 // definition.
 #[cfg(feature = "host")]

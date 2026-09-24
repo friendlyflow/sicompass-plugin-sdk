@@ -122,6 +122,16 @@ pub mod desktop {
     pub use crate::bindings::sicompass::plugin::desktop::*;
 }
 
+/// Whether the user holds one of your paid tiers, if you gate features of
+/// your own: [`license::status`]`("you/pro")` answers `active`, `grace`,
+/// `expired` or `missing`. The host checks the certificate against the issuer
+/// key the store list names for that tier; you never handle keys. Keep `grace`
+/// working (with a notice), disclose paid features in your store entry, and
+/// never gate the user's own data.
+pub mod license {
+    pub use crate::bindings::sicompass::plugin::license::*;
+}
+
 /// Background work: anything slower than a frame.
 ///
 /// [`tasks::spawn`]`("sync", input)` runs [`Plugin::run_task`] in a **fresh

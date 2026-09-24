@@ -71,6 +71,10 @@ pub const DESKTOP_FUNCTIONS: &[(&str, &str)] = &[
     ("sicompass:plugin/desktop", "restore"),
 ];
 
+/// `sicompass:plugin/license`: always linked; it answers only whether the user
+/// holds a tier, never with a key or a certificate.
+pub const LICENSE_FUNCTIONS: &[(&str, &str)] = &[("sicompass:plugin/license", "status")];
+
 /// `sicompass:plugin/tasks`: always linked. A task is the same plugin, running
 /// longer, with no more access.
 pub const TASK_FUNCTIONS: &[(&str, &str)] = &[
@@ -243,6 +247,7 @@ pub fn audit_imports(
         let table: &[(&str, &str)] = match interface {
             "sicompass:plugin/host" => HOST_FUNCTIONS,
             "sicompass:plugin/desktop" => DESKTOP_FUNCTIONS,
+            "sicompass:plugin/license" => LICENSE_FUNCTIONS,
             "sicompass:plugin/tasks" => TASK_FUNCTIONS,
             "sicompass:plugin/sockets" => {
                 if permissions.sockets.is_empty() {

@@ -95,6 +95,9 @@ fn host_imports_are_exactly_the_capability_set() {
         "open-path",
         "trash",
         "restore",
+        // interface license — always linked; answers whether the user holds a
+        // tier (for third-party paid features), never with a key or certificate.
+        "status",
         // interface tasks — always linked; a task is the same plugin, longer.
         "spawn",
         "cancel",
