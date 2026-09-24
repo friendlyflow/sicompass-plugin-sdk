@@ -51,6 +51,8 @@ pub mod tags;
 pub mod timeline;
 // Undoable deletes: the snapshot, which a plugin needs as much as the app.
 pub mod fs_snapshot;
+// Absolute symlinks, which the WASI sandbox never follows on its own.
+pub mod fs_links;
 
 // ---------------------------------------------------------------------------
 // Host-only

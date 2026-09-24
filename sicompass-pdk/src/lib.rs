@@ -112,7 +112,9 @@ pub mod net {
     pub use crate::bindings::sicompass::plugin::net::*;
 }
 
-/// The user's desktop: open a URL or a file, move a file to the trash and back.
+/// The user's desktop: open a URL or a file, move a file to the trash and back,
+/// and read a symlink's target (WASI never reads an absolute one itself; see
+/// `sicompass_sdk::fs_links`).
 ///
 /// Every path must lie inside a directory your plugin was granted: its own
 /// [`STORAGE_DIR`] (with `permissions.storage`) or a folder from
@@ -182,6 +184,91 @@ pub mod sockets {
             }
         }
         Err(last)
+    }
+}
+
+/// Filesystem helpers the sandbox needs.
+pub mod fs {
+    use std::path::Path;
+
+    /// The names in the folder at `path`.
+    ///
+    /// Use this rather than `std::fs::read_dir` in a folder other programs
+    /// change. The host reads the whole folder up front, and an entry removed
+    /// before its type was read (a busy download folder, `/tmp`) becomes an
+    /// error in the listing. `std` stops at the first error, so every name
+    /// after it, often all of them, would be missing. This skips the entry
+    /// that vanished and keeps going. `.` and `..` are never listed.
+    pub fn list_dir(path: &Path) -> std::io::Result<Vec<String>> {
+        imp::list_dir(path)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    mod imp {
+        use std::path::Path;
+        use wasip2::filesystem::preopens::get_directories;
+        use wasip2::filesystem::types::{DescriptorFlags, OpenFlags, PathFlags};
+
+        fn io(e: impl std::fmt::Debug) -> std::io::Error {
+            std::io::Error::other(format!("{e:?}"))
+        }
+
+        pub fn list_dir(path: &Path) -> std::io::Result<Vec<String>> {
+            // The granted folder this path lies in: the longest preopen that
+            // is a prefix of it.
+            let mut best: Option<(wasip2::filesystem::types::Descriptor, usize, String)> = None;
+            for (d, guest) in get_directories() {
+                if path.starts_with(&guest)
+                    && best.as_ref().is_none_or(|(_, len, _)| guest.len() > *len)
+                {
+                    let len = guest.len();
+                    best = Some((d, len, guest));
+                }
+            }
+            let (root, _, guest) = best.ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    format!("{} is outside the granted folders", path.display()),
+                )
+            })?;
+            let rel = path.strip_prefix(&guest).map_err(io)?;
+            let rel = rel.to_string_lossy();
+            let dir = if rel.is_empty() {
+                root
+            } else {
+                root.open_at(
+                    PathFlags::SYMLINK_FOLLOW,
+                    &rel,
+                    OpenFlags::DIRECTORY,
+                    DescriptorFlags::READ,
+                )
+                .map_err(io)?
+            };
+            let stream = dir.read_directory().map_err(io)?;
+            let mut names = Vec::new();
+            // The host's stream moves on after an error, so a vanished entry
+            // costs only itself. Bounded all the same.
+            for _ in 0..1_000_000 {
+                match stream.read_directory_entry() {
+                    Ok(Some(e)) => names.push(e.name),
+                    Ok(None) => break,
+                    Err(_) => continue,
+                }
+            }
+            Ok(names)
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    mod imp {
+        use std::path::Path;
+
+        pub fn list_dir(path: &Path) -> std::io::Result<Vec<String>> {
+            Ok(std::fs::read_dir(path)?
+                .filter_map(Result::ok)
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect())
+        }
     }
 }
 

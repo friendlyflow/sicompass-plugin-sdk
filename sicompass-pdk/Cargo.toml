@@ -35,3 +35,8 @@ crate-type = ["cdylib", "rlib"]
 # crate re-exports.
 sicompass-sdk = { version = "0.8.0", path = "..", default-features = false }
 wit-bindgen = "0.60.0"
+
+# `fs::list_dir` reads a directory stream itself, which std cannot do past a
+# vanished entry (see src/lib.rs). Guest-only, like everything here.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasip2 = "1"

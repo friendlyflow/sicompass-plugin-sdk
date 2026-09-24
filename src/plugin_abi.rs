@@ -69,6 +69,7 @@ pub const DESKTOP_FUNCTIONS: &[(&str, &str)] = &[
     ("sicompass:plugin/desktop", "open-path"),
     ("sicompass:plugin/desktop", "trash"),
     ("sicompass:plugin/desktop", "restore"),
+    ("sicompass:plugin/desktop", "read-link"),
 ];
 
 /// `sicompass:plugin/license`: always linked; it answers only whether the user
