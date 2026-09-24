@@ -95,6 +95,11 @@ fn host_imports_are_exactly_the_capability_set() {
         "open-path",
         "trash",
         "restore",
+        // interface tasks — always linked; a task is the same plugin, longer.
+        "spawn",
+        "cancel",
+        "emit",
+        "cancelled",
         // Reads only files under `assets/` in the plugin's own install directory,
         // i.e. bytes the plugin shipped itself. No ambient filesystem.
         "read-asset",
@@ -265,6 +270,9 @@ fn provider_exports_cover_the_expected_surface() {
         "dashboard-resize",
         "enter-dashboard",
         "leave-dashboard",
+        // 0.2.0: background tasks.
+        "run-task",
+        "on-task-event",
         // 0.2.0: conveniences the built-ins already had host-side.
         "set-dashboard-entry",
         "set-dashboard-palette",

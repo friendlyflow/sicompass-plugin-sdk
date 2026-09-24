@@ -122,6 +122,18 @@ pub mod desktop {
     pub use crate::bindings::sicompass::plugin::desktop::*;
 }
 
+/// Background work: anything slower than a frame.
+///
+/// [`tasks::spawn`]`("sync", input)` runs [`Plugin::run_task`] in a **fresh
+/// instance of your plugin** on a worker thread, with the same permissions and
+/// no shared memory (`Plugin::new` is called there, `init` is not). Inside it,
+/// [`tasks::emit`] reports progress and [`tasks::cancelled`] says when to stop.
+/// Everything comes back to your UI instance through [`Plugin::on_task_event`],
+/// in order, just before the next `poll`. At most 4 run at once; more wait.
+pub mod tasks {
+    pub use crate::bindings::sicompass::plugin::tasks::*;
+}
+
 /// Your plugin's own folder, when `plugin.json` asks for `"storage": true`.
 ///
 /// It persists across restarts and updates, and nothing else can see it. Use it
@@ -132,6 +144,7 @@ pub const STORAGE_DIR: &str = "/storage";
 pub use bindings::sicompass::plugin::types::{
     Cell, CellAttrs, CursorStyle, DashboardKind, DashboardRequest, Descriptor, Frame, Key, Keysym,
     ListItem, NavigationRequest, Palette, PollResult, ProviderOp, SearchResult, Selection,
+    TaskEvent,
 };
 
 /// Naming your own assets: `assets::uri("my-plugin", "logo.png")` builds the
@@ -492,6 +505,16 @@ pub trait Plugin: Sized + 'static {
     /// The host's active colours, before each [`Plugin::dashboard_render`]. Use
     /// them for anything that should look like the list around the dashboard.
     fn set_dashboard_palette(&mut self, _palette: Palette) {}
+
+    /// Run a background task started with [`tasks::spawn`]. Called in a fresh
+    /// worker instance of your plugin, so `self` is new: everything the task
+    /// needs has to come in through `input`.
+    fn run_task(&mut self, name: &str, _input: &[u8]) -> Result<Vec<u8>, String> {
+        Err(format!("this plugin has no task named `{name}`"))
+    }
+
+    /// In your UI instance: progress from, or the end of, a task you spawned.
+    fn on_task_event(&mut self, _id: u64, _event: TaskEvent) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -739,6 +762,17 @@ macro_rules! export_plugin {
 
                 fn set_dashboard_palette(palette: $crate::Palette) {
                     __with(|p| $crate::Plugin::set_dashboard_palette(p, palette))
+                }
+
+                fn run_task(
+                    name: ::std::string::String,
+                    input: ::std::vec::Vec<u8>,
+                ) -> ::std::result::Result<::std::vec::Vec<u8>, ::std::string::String> {
+                    __with(|p| $crate::Plugin::run_task(p, &name, &input))
+                }
+
+                fn on_task_event(id: u64, event: $crate::TaskEvent) {
+                    __with(|p| $crate::Plugin::on_task_event(p, id, event))
                 }
             }
 

@@ -71,6 +71,18 @@ pub const DESKTOP_FUNCTIONS: &[(&str, &str)] = &[
     ("sicompass:plugin/desktop", "restore"),
 ];
 
+/// `sicompass:plugin/tasks`: always linked. A task is the same plugin, running
+/// longer, with no more access.
+pub const TASK_FUNCTIONS: &[(&str, &str)] = &[
+    ("sicompass:plugin/tasks", "spawn"),
+    ("sicompass:plugin/tasks", "cancel"),
+    ("sicompass:plugin/tasks", "emit"),
+    ("sicompass:plugin/tasks", "cancelled"),
+];
+
+/// Most tasks one plugin runs at once. Further `spawn`s wait for a slot.
+pub const MAX_CONCURRENT_TASKS: usize = 4;
+
 /// Where a plugin's own `storage` folder appears inside the guest. The host
 /// preopens `app_data_dir()/<name>` there, so a plugin never needs to know the
 /// host's directory layout.
@@ -181,6 +193,7 @@ pub fn audit_imports(
         let table: &[(&str, &str)] = match interface {
             "sicompass:plugin/host" => HOST_FUNCTIONS,
             "sicompass:plugin/desktop" => DESKTOP_FUNCTIONS,
+            "sicompass:plugin/tasks" => TASK_FUNCTIONS,
             "sicompass:plugin/net" => {
                 if allowed_hosts.is_empty() {
                     return Err("plugin uses the network but declares no `allowedHosts` in \
