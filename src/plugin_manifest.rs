@@ -39,6 +39,8 @@ pub const RETIRED_TYPES: &[&str] = &["native", "script"];
 #[serde(rename_all = "lowercase")]
 pub enum SettingKind {
     Text,
+    /// A text setting shown masked, for keys and tokens.
+    Password,
     Checkbox,
     Radio,
 }

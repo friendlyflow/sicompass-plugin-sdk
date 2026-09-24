@@ -154,7 +154,18 @@ pub fn access_fingerprint(allowed_hosts: &[String], p: &Permissions) -> String {
 pub fn needs_approval(m: &crate::plugin_manifest::PluginManifest) -> bool {
     let p = &m.permissions;
     !(p.filesystem.is_empty() && p.process.is_empty() && p.sockets.is_empty())
+        || reaches_any_server(&m.allowed_hosts())
 }
+
+/// `allowedHosts: ["*"]`: any public server, for a plugin whose servers the
+/// user chooses (a remote-service client, a browser). Unlike a named list it
+/// needs the user's approval. Internal addresses stay out of reach either way.
+pub fn reaches_any_server(allowed_hosts: &[String]) -> bool {
+    allowed_hosts.iter().any(|h| h.trim() == ANY_SERVER)
+}
+
+/// The `allowedHosts` entry meaning any public server.
+pub const ANY_SERVER: &str = "*";
 
 /// Whether a `wasi:*` interface (version stripped) is in [`WASI_BASELINE`].
 pub fn is_wasi_baseline(interface: &str) -> bool {
@@ -479,6 +490,26 @@ mod tests {
             &["open-url", "trash"],
         )];
         audit_imports(&imports, &provider_export(), &Permissions::default(), &[]).unwrap();
+    }
+
+    #[test]
+    fn any_server_needs_approval_and_a_named_list_does_not() {
+        let m = |hosts: &str| {
+            crate::plugin_manifest::parse_manifest(&format!(
+                r#"{{ "name": "x", "displayName": "x", "entry": "plugin.wasm",
+                     "allowedHosts": [{hosts}] }}"#
+            ))
+            .unwrap()
+        };
+        assert!(!needs_approval(&m(r#""example.com""#)));
+        assert!(needs_approval(&m(r#""*""#)));
+        assert!(reaches_any_server(
+            &m(r#""example.com", "*""#).allowed_hosts()
+        ));
+        assert_ne!(
+            approval_fingerprint(&m(r#""*""#)),
+            approval_fingerprint(&m(r#""example.com""#))
+        );
     }
 
     #[test]
