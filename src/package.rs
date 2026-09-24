@@ -79,6 +79,27 @@ impl ReleaseInfo {
         })
     }
 
+    /// What the user approves by installing this release, in the form
+    /// `settings.json` records (`plugin_abi::approval_fingerprint`).
+    pub fn approval_fingerprint(&self) -> String {
+        crate::plugin_abi::access_fingerprint(&self.allowed_hosts, &self.permissions)
+    }
+
+    /// Whether this release asks for access `installed` does not have: a host,
+    /// folder, program or socket that is new. Asking for less is not "more".
+    pub fn asks_for_more_than(&self, installed: &PluginManifest) -> bool {
+        fn new_items(now: &[String], before: &[String]) -> bool {
+            let norm = |s: &String| s.trim().to_ascii_lowercase();
+            let before: std::collections::HashSet<String> = before.iter().map(norm).collect();
+            now.iter().map(norm).any(|x| !before.contains(&x))
+        }
+        let (p, q) = (&self.permissions, &installed.permissions);
+        new_items(&self.allowed_hosts, &installed.allowed_hosts())
+            || new_items(&p.filesystem, &q.filesystem)
+            || new_items(&p.process, &q.process)
+            || new_items(&p.sockets, &q.sockets)
+    }
+
     /// Whether a manifest (the one inside the archive) says the same as this
     /// release about everything the user approves: name, version, access, service.
     pub fn matches_manifest(&self, m: &PluginManifest) -> Result<(), String> {
@@ -498,5 +519,44 @@ mod tests {
                 .unwrap_err()
                 .contains("permissions")
         );
+    }
+
+    #[test]
+    fn a_release_fingerprints_like_its_manifest_and_notices_new_access() {
+        let before = manifest("1.0.0");
+        let info = ReleaseInfo::new(&before, b"archive").unwrap();
+        assert_eq!(
+            info.approval_fingerprint(),
+            crate::plugin_abi::approval_fingerprint(&before)
+        );
+        assert!(!info.asks_for_more_than(&before));
+
+        // Fewer hosts is not more access.
+        let none = crate::plugin_manifest::parse_manifest(
+            r#"{ "name": "demo", "displayName": "Demo", "entry": "plugin.wasm", "version": "1.0.1" }"#,
+        )
+        .unwrap();
+        assert!(
+            !ReleaseInfo::new(&none, b"a")
+                .unwrap()
+                .asks_for_more_than(&before)
+        );
+
+        // A new host, folder, program or socket each is.
+        for extra in [
+            r#""allowedHosts": ["example.com", "other.org"]"#,
+            r#""allowedHosts": ["example.com"], "filesystem": ["~/Documents"]"#,
+            r#""allowedHosts": ["example.com"], "process": ["git"]"#,
+            r#""allowedHosts": ["example.com"], "sockets": ["imap.example.com:993"]"#,
+        ] {
+            let m = crate::plugin_manifest::parse_manifest(&format!(
+                r#"{{ "name": "demo", "displayName": "Demo", "entry": "plugin.wasm",
+                     "version": "1.1.0", "permissions": {{ {extra} }} }}"#
+            ))
+            .unwrap();
+            let newer = ReleaseInfo::new(&m, b"a").unwrap();
+            assert!(newer.asks_for_more_than(&before), "{extra}");
+            assert_ne!(newer.approval_fingerprint(), info.approval_fingerprint());
+        }
     }
 }

@@ -122,6 +122,12 @@ pub const STORAGE_GUEST_DIR: &str = "/storage";
 /// access, and compared on every load, so an update asking for more is noticed.
 /// `storage` is not included: a folder of the plugin's own grants nothing.
 pub fn approval_fingerprint(m: &crate::plugin_manifest::PluginManifest) -> String {
+    access_fingerprint(&m.allowed_hosts(), &m.permissions)
+}
+
+/// [`approval_fingerprint`] from its parts, for a release that is not unpacked
+/// yet (`release.json` carries the merged hosts and the permissions).
+pub fn access_fingerprint(allowed_hosts: &[String], p: &Permissions) -> String {
     fn list(items: &[String]) -> String {
         let mut v: Vec<String> = items
             .iter()
@@ -131,10 +137,9 @@ pub fn approval_fingerprint(m: &crate::plugin_manifest::PluginManifest) -> Strin
         v.dedup();
         v.join(",")
     }
-    let p = &m.permissions;
     format!(
         "hosts={};filesystem={};process={};sockets={}",
-        list(&m.allowed_hosts()),
+        list(allowed_hosts),
         list(&p.filesystem),
         list(&p.process),
         list(&p.sockets)

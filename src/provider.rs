@@ -244,6 +244,10 @@ pub trait Provider: Send + 'static {
     /// Remove a named section from this provider.
     fn remove_settings_section(&mut self, _name: &str) {}
 
+    /// Remove one checkbox entry, e.g. an uninstalled program's line in
+    /// "Available programs:". Only the settings provider implements it.
+    fn remove_checkbox_setting(&mut self, _section: &str, _config_key: &str) {}
+
     /// Attach a version string to a named section. The settings provider
     /// stores this and renders it as a passive child line under the section.
     /// Default: no-op.
