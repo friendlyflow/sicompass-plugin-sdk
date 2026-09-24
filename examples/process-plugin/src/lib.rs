@@ -79,7 +79,7 @@ impl Plugin for Proc {
     }
 
     fn commands(&self) -> Vec<String> {
-        ["run", "pty", "stdin", "cwd", "env"]
+        ["run", "pty", "stdin", "cwd", "env", "unset"]
             .map(String::from)
             .to_vec()
     }
@@ -95,14 +95,14 @@ impl Plugin for Proc {
                 let mut words = arg.split_whitespace().map(str::to_owned);
                 let program = words.next().unwrap_or_default();
                 let args: Vec<String> = words.collect();
-                Child::spawn(&program, &args, None, &[], None).map(|c| exit_line(collect(&c)))
+                Child::spawn(&program, &args, None, &[], &[], None).map(|c| exit_line(collect(&c)))
             }
-            "pty" => Child::spawn("sh", &[], None, &[], Some(PtySize { rows: 24, cols: 80 }))
+            "pty" => Child::spawn("sh", &[], None, &[], &[], Some(PtySize { rows: 24, cols: 80 }))
                 .and_then(|c| {
                     c.write(b"echo pty-$((6*7)); exit 3\n")?;
                     Ok(exit_line(collect(&c)))
                 }),
-            "stdin" => Child::spawn("cat", &[], None, &[], None).and_then(|c| {
+            "stdin" => Child::spawn("cat", &[], None, &[], &[], None).and_then(|c| {
                 c.write(b"piped through\n")?;
                 let deadline = Instant::now() + Duration::from_secs(5);
                 let mut out = Vec::new();
@@ -113,13 +113,25 @@ impl Plugin for Proc {
                 c.kill();
                 Ok(String::from_utf8_lossy(&out).into_owned())
             }),
-            "cwd" => Child::spawn("sh", &["-c".into(), "pwd".into()], Some(arg), &[], None)
+            "cwd" => Child::spawn("sh", &["-c".into(), "pwd".into()], Some(arg), &[], &[], None)
                 .map(|c| exit_line(collect(&c))),
             "env" => Child::spawn(
                 "sh",
                 &["-c".into(), "echo $SICOMPASS_TEST".into()],
                 None,
                 &[("SICOMPASS_TEST".into(), "from-the-plugin".into())],
+                &[],
+                None,
+            )
+            .map(|c| exit_line(collect(&c))),
+            // `arg` names an inherited variable to remove: the program sees it
+            // unset.
+            "unset" => Child::spawn(
+                "sh",
+                &["-c".into(), format!("echo ${{{arg}:-unset}}")],
+                None,
+                &[],
+                std::slice::from_ref(&arg.to_owned()),
                 None,
             )
             .map(|c| exit_line(collect(&c))),

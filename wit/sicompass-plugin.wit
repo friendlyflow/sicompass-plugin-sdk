@@ -550,11 +550,17 @@ interface process {
     /// Start `program`. With `pty`, it runs attached to a new pseudo-terminal of
     /// that size (stdout and stderr both arrive through `read`); without, its
     /// stdin, stdout and stderr are pipes.
+    ///
+    /// The program inherits sicompass's environment (the user's `PATH`,
+    /// `HOME`, SSH agent and so on). `env` sets variables on top of it, and
+    /// `unset` removes inherited ones: a plugin that must not be steered by,
+    /// say, a stray `GIT_DIR` removes it here.
     spawn: static func(
       program: string,
       args: list<string>,
       cwd: option<string>,
       env: list<tuple<string, string>>,
+      unset: list<string>,
       pty: option<pty-size>,
     ) -> result<child, string>;
 
