@@ -36,6 +36,17 @@ host = [
     "dep:xdg",
     "dep:winreg",
 ]
+# Plugin releases: build, sign, verify and unpack `plugin.tar.gz` +
+# `release.json` (src/package.rs). For the `sicompass-plugin` tool and the Store,
+# never for a guest. Additive like `host`.
+package = [
+    "dep:tar",
+    "dep:flate2",
+    "dep:sha2",
+    "dep:ed25519-dalek",
+    "dep:base64",
+    "dep:getrandom",
+]
 
 [dependencies]
 # Always available — these all compile for wasm32-unknown-unknown, so guests get
@@ -56,6 +67,14 @@ fluent = { version = "0.17", optional = true }
 fluent-langneg = { version = "0.14", optional = true }
 unic-langid = { version = "0.9", optional = true }
 intl-memoizer = { version = "0.5", optional = true }
+
+# `package`. The versions sicompass already locks, so the app builds one copy.
+tar = { version = "0.4", optional = true }
+flate2 = { version = "1", optional = true }
+sha2 = { version = "0.11", optional = true }
+ed25519-dalek = { version = "3", optional = true }
+base64 = { version = "0.23", optional = true }
+getrandom = { version = "0.3", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 xdg = { version = "3", optional = true }

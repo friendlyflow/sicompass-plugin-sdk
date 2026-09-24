@@ -11,6 +11,15 @@ definition of the WASM plugin interface. It holds three crates:
   because it only builds for a WASM target.
 - `examples/*`: guest plugins, also their own workspace roots. They double as
   the fixtures sicompass tests its host against.
+- `tools/sicompass-plugin`: the release tool (keygen, pack, sign, verify), its
+  own workspace root. It uses the SDK's `package` feature and `plugin_abi`, the
+  same code the Store runs, so a release that verifies here installs there. Its
+  tests need the examples built (`./scripts/verify-guest.sh`) first.
+
+`src/plugin_abi.rs` (the ABI version, the WASI baseline, the host function
+tables, the import audit, the locale-prefix rule) and `src/plugin_manifest.rs`
+(`plugin.json`) are the single definition sicompass's host, the tool and the
+Store share. Change the ABI there, not in a copy.
 
 Work on it is usually driven from a sicompass checkout next to this one
 (`../sicompass`), whose `/commit-and-push`, `/release`, `/sync` and

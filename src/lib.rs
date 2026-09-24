@@ -36,6 +36,13 @@ pub mod ffon;
 // mode and any surface that edits text itself.
 pub mod input;
 pub mod placeholders;
+// The plugin ABI as data, and `plugin.json`: portable, because the app's host,
+// the `sicompass-plugin` tool and the Store all have to agree on them exactly.
+pub mod plugin_abi;
+pub mod plugin_manifest;
+// Plugin releases (archive, release.json, signatures): the tool and the Store.
+#[cfg(feature = "package")]
+pub mod package;
 pub mod provider;
 pub mod tags;
 pub mod timeline;

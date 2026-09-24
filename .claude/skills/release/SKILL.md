@@ -98,6 +98,10 @@ window short.
    the published SDK by hand, which also confirms the `wit/` symlink
    materialized as a real file.
 
+8b. **Publish `sicompass-plugin`** (the tool in `tools/sicompass-plugin`) when it
+   or the `package` / `plugin_abi` code it uses changed. Same rule as the pdk:
+   after the SDK, with its `sicompass-sdk` pin moved to the new version.
+
 9. **Rebuild sicompass's committed WASM fixtures** if the WIT changed. Build
    `examples/hello-plugin` and `examples/net-plugin`, and copy the components to
    `../sicompass/src/sicompass/tests/fixtures/wasm/{hello,net}.wasm`. The header

@@ -1,0 +1,26 @@
+# Its own workspace root, like sicompass-pdk and the examples: a host tool that
+# the SDK's `cargo test` has no reason to build.
+[workspace]
+
+[package]
+name = "sicompass-plugin"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Pack, sign and verify sicompass plugin releases"
+repository = "https://github.com/friendlyflow/sicompass-plugin-sdk"
+readme = "README.md"
+keywords = ["sicompass", "plugin", "wasm", "release"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+# `cargo publish` strips the path and keeps the version.
+sicompass-sdk = { version = "0.8.0", path = "../..", default-features = false, features = ["package"] }
+clap = { version = "4", features = ["derive"] }
+# Reads a built component's WIT-level imports and exports for the audit.
+wit-component = "0.258"
+wit-parser = "0.258"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
