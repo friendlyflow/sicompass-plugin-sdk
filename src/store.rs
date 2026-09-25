@@ -178,7 +178,7 @@ mod tests {
                 "friendlyflow/cloud": {{ "issuer": "{tier_key}", "checkout": "https://x/checkout", "title": "store-tier-cloud" }}
               }},
               "plugins": [
-                {{ "name": "notes", "repo": "friendlyflow/notes_plugin_sicompass",
+                {{ "name": "notes", "repo": "friendlyflow/notes-plugin-sicompass",
                    "pubkey": "{plugin_key}", "category": "productivity",
                    "service": "friendlyflow/cloud", "revoked": ["ABCDEF"] }}
               ]
@@ -199,7 +199,7 @@ mod tests {
         let notes = c.entry("notes").unwrap();
         assert_eq!(
             notes.release_url("release.json"),
-            "https://github.com/friendlyflow/notes_plugin_sicompass/releases/latest/download/release.json"
+            "https://github.com/friendlyflow/notes-plugin-sicompass/releases/latest/download/release.json"
         );
         assert!(notes.is_revoked("abcdef"));
         assert!(!notes.is_revoked("123"));
@@ -207,7 +207,7 @@ mod tests {
         // Another key, or an edit after signing: refused.
         let (_, stranger) = generate_keypair().unwrap();
         assert!(verify_store(json.as_bytes(), &sig, &[&stranger]).is_err());
-        let edited = json.replace("notes_plugin_sicompass", "evil_plugin");
+        let edited = json.replace("notes-plugin-sicompass", "evil_plugin");
         assert!(verify_store(edited.as_bytes(), &sig, &[&working_pk]).is_err());
     }
 
@@ -218,7 +218,7 @@ mod tests {
         let bad =
             |from: &str, to: &str| Store::parse(base.replace(from, to).as_bytes()).unwrap_err();
         assert!(bad("\"version\": 1", "\"version\": 2").contains("format"));
-        assert!(bad("friendlyflow/notes_plugin_sicompass", "no-slash").contains("owner/name"));
+        assert!(bad("friendlyflow/notes-plugin-sicompass", "no-slash").contains("owner/name"));
         assert!(bad("\"name\": \"notes\"", "\"name\": \"../x\"").contains("plain name"));
         assert!(bad(&format!("\"pubkey\": \"{k}\""), "\"pubkey\": \"short\"").contains("key"));
         assert!(

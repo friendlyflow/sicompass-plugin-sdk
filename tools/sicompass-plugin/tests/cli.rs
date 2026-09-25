@@ -153,7 +153,7 @@ fn a_store_is_checked_signed_and_verified() {
         dir.path().join("store.json"),
         format!(
             r#"{{ "version": 1, "plugins": [ {{ "name": "hello",
-                 "repo": "friendlyflow/hello_plugin_sicompass", "pubkey": "{plugin_pk}" }} ] }}"#
+                 "repo": "friendlyflow/hello-plugin-sicompass", "pubkey": "{plugin_pk}" }} ] }}"#
         ),
     )
     .unwrap();

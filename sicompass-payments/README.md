@@ -43,7 +43,7 @@ Your plugin learns where the user stands, and gets the token for your own
 service, from its host's `license` interface, so it never handles a
 certificate. The messages the user sees come from your plugin's own locales,
 under your prefix: `cloud::MESSAGES` lists the ids. The notes plugin
-(`notes_plugin_sicompass`) is a complete example.
+(`notes-plugin-sicompass`) is a complete example.
 
 ## Building from source
 
@@ -58,9 +58,9 @@ cargo check --target wasm32-wasip2     # the build plugins link
 ## Related repositories
 
 - [sicompass](https://github.com/friendlyflow/sicompass), the application
-- [notes_plugin_sicompass](https://github.com/friendlyflow/notes_plugin_sicompass)
+- [notes-plugin-sicompass](https://github.com/friendlyflow/notes-plugin-sicompass)
   and
-  [projectmanagement_plugin_sicompass](https://github.com/friendlyflow/projectmanagement_plugin_sicompass),
+  [projectmanagement-plugin-sicompass](https://github.com/friendlyflow/projectmanagement-plugin-sicompass),
   which back up with it
 
 ## Community
