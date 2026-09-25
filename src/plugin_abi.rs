@@ -109,7 +109,10 @@ pub const TASK_FUNCTIONS: &[(&str, &str)] = &[
 pub const PROCESS_FUNCTIONS: &[(&str, &str)] = &[
     ("sicompass:plugin/process", "which"),
     ("sicompass:plugin/process", "[static]child.spawn"),
-    ("sicompass:plugin/process", "[static]child.spawn-with-channel"),
+    (
+        "sicompass:plugin/process",
+        "[static]child.spawn-with-channel",
+    ),
     ("sicompass:plugin/process", "[method]child.channel-read"),
     ("sicompass:plugin/process", "[method]child.channel-write"),
     ("sicompass:plugin/process", "[method]child.read"),

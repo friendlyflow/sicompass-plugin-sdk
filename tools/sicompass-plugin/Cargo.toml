@@ -15,7 +15,7 @@ categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 # `cargo publish` strips the path and keeps the version.
-sicompass-sdk = { version = "0.8.0", path = "../..", default-features = false, features = ["package"] }
+sicompass-sdk = { version = "0.9.0", path = "../..", default-features = false, features = ["package"] }
 clap = { version = "4", features = ["derive"] }
 # Reads a built component's WIT-level imports and exports for the audit.
 wit-component = "0.258"

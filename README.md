@@ -57,7 +57,7 @@ timeline records, dashboard types — and compiles for the WASM guest targets.
 crate-type = ["cdylib"]
 
 [dependencies]
-sicompass-pdk = "0.5"
+sicompass-pdk = "0.6"
 ```
 
 ```rust

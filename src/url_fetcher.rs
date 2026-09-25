@@ -136,10 +136,17 @@ mod tests {
         set_renderer_available(true);
         assert!(request_render("https://a.example/"));
         assert!(request_render("https://a.example/"), "asked again");
-        assert_eq!(take_render_requests(), ["https://a.example/"], "but queued once");
+        assert_eq!(
+            take_render_requests(),
+            ["https://a.example/"],
+            "but queued once"
+        );
         assert!(take_render_requests().is_empty());
 
-        deliver_render("https://a.example/", vec![FfonElement::new_str("A".to_owned())]);
+        deliver_render(
+            "https://a.example/",
+            vec![FfonElement::new_str("A".to_owned())],
+        );
         let pages = take_rendered();
         assert_eq!(pages.len(), 1);
         assert_eq!(pages[0].0, "https://a.example/");

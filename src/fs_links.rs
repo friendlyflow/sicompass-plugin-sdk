@@ -106,7 +106,10 @@ mod tests {
     #[test]
     fn a_plain_path_is_itself() {
         let (_t, real) = tree();
-        assert_eq!(resolve(&real.join("data/docs/sub")), real.join("data/docs/sub"));
+        assert_eq!(
+            resolve(&real.join("data/docs/sub")),
+            real.join("data/docs/sub")
+        );
     }
 
     #[test]
