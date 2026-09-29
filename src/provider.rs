@@ -313,15 +313,14 @@ pub trait Provider: Send + 'static {
     /// (e.g. `chatHomeserver`, `sortOrder`, `colorScheme`). Default: no-op.
     fn on_setting_change(&mut self, _key: &str, _value: &str) {}
 
-    /// Name settings whose value lives somewhere other than this provider's
-    /// own config file, so it must neither read them from it nor write them to
-    /// it. Their rows still show, and changing one still reaches the apply
-    /// callback, which is where the owner of the real value saves it.
+    /// Name settings someone else owns: the settings provider shows no row
+    /// for them and replays none of them at startup. Their values reach the
+    /// app another way.
     ///
     /// Used by sicompass in a desicompass session, where the accessibility
-    /// settings are one object shared with the superkey rather than keys in the
-    /// user's `settings.json`. Only the settings provider implements it.
-    /// Default: no-op.
+    /// settings are one object the login screen and desicompass-superkey
+    /// change, not rows on sicompass's own settings page. Only the settings
+    /// provider implements it. Default: no-op.
     fn set_external_setting_keys(&mut self, _keys: &[&str]) {}
 
     /// Create a new FFON element for an "Add element:" section.
