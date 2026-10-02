@@ -152,7 +152,7 @@ pub mod license {
 /// no shared memory (`Plugin::new` is called there, `init` is not). Inside it,
 /// [`tasks::emit`] reports progress and [`tasks::cancelled`] says when to stop.
 /// Everything comes back to your UI instance through [`Plugin::on_task_event`],
-/// in order, just before the next `poll`. At most 4 run at once; more wait.
+/// in order, just before the next `poll`. At most 16 run at once; more wait.
 pub mod tasks {
     pub use crate::bindings::sicompass::plugin::tasks::*;
 }

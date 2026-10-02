@@ -142,7 +142,9 @@ pub const WASI_SOCKETS: &[&str] = &[
 ];
 
 /// Most tasks one plugin runs at once. Further `spawn`s wait for a slot.
-pub const MAX_CONCURRENT_TASKS: usize = 4;
+/// Informational: the host enforces its own figure
+/// (`wasm_host::tasks::MAX_CONCURRENT_TASKS` in the app), which this mirrors.
+pub const MAX_CONCURRENT_TASKS: usize = 16;
 
 /// Where a plugin's own `storage` folder appears inside the guest. The host
 /// preopens `app_data_dir()/<name>` there, so a plugin never needs to know the
