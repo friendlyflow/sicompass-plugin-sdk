@@ -67,6 +67,10 @@ pub mod fs_trash;
 // two divergent ones.
 #[cfg(feature = "host")]
 pub mod localize;
+// The installed plugins' manifests and locale files, read from disk by the WASM
+// host and by built-ins that describe them (the tutorial).
+#[cfg(feature = "host")]
+pub mod installed_plugins;
 // The answer to a plugin's `license.status(tier)`, registered by the Store.
 #[cfg(feature = "host")]
 pub mod license;

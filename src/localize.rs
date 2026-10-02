@@ -57,17 +57,17 @@ impl Localizer {
     }
 
     fn format(&self, key: &str, args: Option<&FluentArgs>) -> String {
-        if let Some(s) = self.format_in(&self.active, key, args) {
-            return s;
-        }
-        if self.active != FALLBACK_LOCALE {
-            if let Some(s) = self.format_in(FALLBACK_LOCALE, key, args) {
-                return s;
-            }
-        }
         // Loud failure: missing key. Returning the key itself makes gaps
         // obvious in the UI without crashing.
-        key.to_owned()
+        self.try_format(key, args).unwrap_or_else(|| key.to_owned())
+    }
+
+    fn try_format(&self, key: &str, args: Option<&FluentArgs>) -> Option<String> {
+        self.format_in(&self.active, key, args).or_else(|| {
+            (self.active != FALLBACK_LOCALE)
+                .then(|| self.format_in(FALLBACK_LOCALE, key, args))
+                .flatten()
+        })
     }
 
     fn format_in(&self, locale: &str, key: &str, args: Option<&FluentArgs>) -> Option<String> {
@@ -127,6 +127,15 @@ pub fn t(key: &str) -> String {
         .format(key, None)
 }
 
+/// Like [`t`], but `None` for a key no bundle defines, instead of the key
+/// itself. For text that is optional, such as a plugin's `<name>-tutorial`.
+pub fn try_t(key: &str) -> Option<String> {
+    global()
+        .read()
+        .expect("localizer poisoned")
+        .try_format(key, None)
+}
+
 /// Resolve a Fluent message key with named parameters (e.g. `{ $err }`).
 pub fn t_args(key: &str, args: &FluentArgs) -> String {
     global()
@@ -140,13 +149,14 @@ pub fn t_args(key: &str, args: &FluentArgs) -> String {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::sync::Mutex;
 
     // The Localizer is a process-global; tests must serialize so they don't
-    // race on `active` or stomp each other's bundles.
-    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    // race on `active` or stomp each other's bundles. Other modules' tests that
+    // register bundles take it too.
+    pub(crate) fn test_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
             .lock()
@@ -173,6 +183,18 @@ mod tests {
         reset();
         register_bundle("en-US", "hello = Hello").unwrap();
         assert_eq!(t("does-not-exist"), "does-not-exist");
+    }
+
+    #[test]
+    fn try_t_is_none_for_a_missing_key_and_falls_back_like_t() {
+        let _g = test_lock();
+        reset();
+        register_bundle("en-US", "only-english = Only English").unwrap();
+        register_bundle("nl-BE", "both = Allebei").unwrap();
+        set_locale("nl-BE");
+        assert_eq!(try_t("both").as_deref(), Some("Allebei"));
+        assert_eq!(try_t("only-english").as_deref(), Some("Only English"));
+        assert_eq!(try_t("does-not-exist"), None);
     }
 
     #[test]
