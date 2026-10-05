@@ -188,3 +188,84 @@ fn a_store_is_checked_signed_and_verified() {
     );
     assert!(!ok && out.contains("format"), "{out}");
 }
+
+/// A plugin process's directory, with two fake platform builds beside it.
+fn process_plugin() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("plugin.json"),
+        r#"{ "name": "proc", "displayName": "proc", "type": "process", "entry": "plugin",
+             "version": "1.0.0", "permissions": { "process": ["git"] } }"#,
+    )
+    .unwrap();
+    std::fs::create_dir(dir.path().join("locales")).unwrap();
+    std::fs::write(dir.path().join("locales/en-US.ftl"), "proc-hello = hi\n").unwrap();
+    std::fs::create_dir(dir.path().join("build")).unwrap();
+    std::fs::write(dir.path().join("build/mac"), b"macho bytes").unwrap();
+    std::fs::write(dir.path().join("build/win.exe"), b"MZ bytes").unwrap();
+    dir
+}
+
+#[test]
+fn a_plugin_process_packs_one_archive_per_target_and_verifies() {
+    let dir = process_plugin();
+    let public = keypair(dir.path(), "k.key");
+    let (ok, out) = tool(
+        &[
+            "pack",
+            "--bin",
+            "aarch64-apple-darwin=build/mac",
+            "--bin",
+            "x86_64-pc-windows-msvc=build/win.exe",
+        ],
+        dir.path(),
+    );
+    assert!(ok, "{out}");
+    assert!(out.contains("proc 1.0.0 (ABI process/1.0)"), "{out}");
+    assert!(out.contains("plugin.exe for x86_64-pc-windows-msvc"), "{out}");
+    for f in [
+        "plugin-aarch64-apple-darwin.tar.gz",
+        "plugin-x86_64-pc-windows-msvc.tar.gz",
+        "release.json",
+    ] {
+        assert!(dir.path().join("dist").join(f).is_file(), "{f}");
+    }
+    assert!(!dir.path().join("dist/plugin.tar.gz").exists());
+
+    assert!(tool(&["sign", "--key", "k.key"], dir.path()).0);
+    let (ok, out) = tool(&["verify", "--pubkey", &public], dir.path());
+    assert!(ok, "{out}");
+    assert!(
+        out.contains("verifies for aarch64-apple-darwin, x86_64-pc-windows-msvc"),
+        "{out}"
+    );
+
+    // Swapping one target's archive for another's breaks only that hash, and
+    // verify notices.
+    std::fs::copy(
+        dir.path().join("dist/plugin-aarch64-apple-darwin.tar.gz"),
+        dir.path().join("dist/plugin-x86_64-pc-windows-msvc.tar.gz"),
+    )
+    .unwrap();
+    let (ok, out) = tool(&["verify", "--pubkey", &public], dir.path());
+    assert!(!ok && out.contains("SHA-256"), "{out}");
+}
+
+#[test]
+fn a_plugin_process_needs_known_targets_and_a_component_takes_no_bin() {
+    let dir = process_plugin();
+    let (ok, out) = tool(&["pack"], dir.path());
+    assert!(!ok && out.contains("--bin"), "{out}");
+    let (ok, out) = tool(&["pack", "--bin", "x86_64-linux=build/mac"], dir.path());
+    assert!(!ok && out.contains("not `x86_64-linux`"), "{out}");
+    let (ok, out) = tool(&["pack", "--bin", "build/mac"], dir.path());
+    assert!(!ok && out.contains("<target-triple>=<executable>"), "{out}");
+
+    std::fs::write(
+        dir.path().join("plugin.json"),
+        r#"{ "name": "proc", "displayName": "proc", "entry": "plugin.wasm", "version": "1.0.0" }"#,
+    )
+    .unwrap();
+    let (ok, out) = tool(&["pack", "--bin", "aarch64-apple-darwin=build/mac"], dir.path());
+    assert!(!ok && out.contains("is for a plugin process"), "{out}");
+}

@@ -18,6 +18,12 @@ pub enum PluginType {
     /// having to ask for it.
     #[default]
     Wasm,
+    /// A program of its own, which the app starts and talks to over its stdin
+    /// and stdout ([`crate::plugin_ipc`]). `entry` names the executable without
+    /// an extension: the app adds `.exe` on Windows, so one `plugin.json` serves
+    /// every platform. It runs with the user's rights, so its `permissions` say
+    /// what it intends to do rather than limit it.
+    Process,
     /// Instantiate a built-in factory provider by the manifest's `name` field.
     ///
     /// Not third-party code: this names a provider already compiled into the
@@ -248,6 +254,16 @@ mod tests {
         )
         .unwrap();
         assert!(browser.renders_pages);
+    }
+
+    #[test]
+    fn a_process_plugin_names_its_entry_without_an_extension() {
+        let m = parse_manifest(
+            r#"{ "name": "x", "displayName": "x", "type": "process", "entry": "plugin" }"#,
+        )
+        .unwrap();
+        assert_eq!(m.plugin_type, PluginType::Process);
+        assert_eq!(m.entry, "plugin");
     }
 
     #[test]

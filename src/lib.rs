@@ -40,6 +40,12 @@ pub mod placeholders;
 // the `sicompass-plugin` tool and the Store all have to agree on them exactly.
 pub mod plugin_abi;
 pub mod plugin_manifest;
+// A plugin process and the app talk over stdin and stdout in these messages.
+#[cfg(feature = "ipc")]
+pub mod plugin_ipc;
+// Writing a plugin: the trait, and the runtime that serves it.
+#[cfg(feature = "plugin")]
+pub mod plugin;
 // Plugin releases (archive, release.json, signatures): the tool and the Store.
 #[cfg(feature = "package")]
 pub mod package;

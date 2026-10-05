@@ -1,6 +1,6 @@
 [package]
 name = "sicompass-sdk"
-version = "0.9.0"
+version = "0.9.1"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "Sicompass provider SDK — FFON types, Provider trait, tag parsing, platform utils"
@@ -48,6 +48,14 @@ package = [
     "dep:getrandom",
 ]
 
+# The wire between the app and a plugin process (src/plugin_ipc): the records,
+# the messages and their framing. The app uses it to talk to its plugins.
+ipc = ["dep:postcard"]
+# Writing a plugin (src/plugin): the `Plugin` trait, and in a native build the
+# runtime that serves it to the app over stdin and stdout. A plugin depends on
+# the SDK with `default-features = false, features = ["plugin"]`.
+plugin = ["ipc", "dep:libc", "dep:windows-sys"]
+
 [dependencies]
 # Always available — these all compile for wasm32-unknown-unknown, so guests get
 # the full FFON data model including the HTML -> FFON pipeline.
@@ -76,13 +84,27 @@ ed25519-dalek = { version = "3", optional = true }
 base64 = { version = "0.23", optional = true }
 getrandom = { version = "0.3", optional = true }
 
+# `ipc`. The version wasmtime already locks in the app.
+postcard = { version = "1.1", default-features = false, features = ["use-std"], optional = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 xdg = { version = "3", optional = true }
 
+# `plugin`: moving stdin and stdout aside (src/plugin/stdio.rs).
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", optional = true }
+
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = { version = "0.56", optional = true }
+windows-sys = { version = "0.61", optional = true, features = ["Win32_Foundation", "Win32_System_Console"] }
 
 [dev-dependencies]
 mockall = "0.15"
 tempfile = "3"
 wit-parser = "0.254.0"
+
+# A plugin process for tests/plugin_process.rs.
+[[example]]
+name = "stdio_plugin"
+path = "tests/fixtures/stdio_plugin.rs"
+required-features = ["plugin"]

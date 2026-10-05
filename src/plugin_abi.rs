@@ -17,6 +17,67 @@ use crate::plugin_manifest::Permissions;
 /// The plugin ABI version: the `sicompass:plugin` WIT package version.
 pub const ABI_VERSION: &str = "0.2.0";
 
+/// The protocol a plugin process and the app speak (`crate::plugin_ipc`),
+/// `major.minor`. They talk only when the majors match: a minor bump adds
+/// requests at the end, which an older peer answers as unsupported.
+pub const PROTOCOL_VERSION: &str = "1.0";
+
+/// The `abi` a release of a plugin process names in `release.json`. Unlike
+/// [`ABI_VERSION`], an app that only runs WASM components refuses it rather
+/// than installing a program it cannot run.
+pub const PROCESS_ABI: &str = "process/1.0";
+
+/// The major part of a version string (`"1"` of `"1.0"`).
+pub fn protocol_major(version: &str) -> &str {
+    version.split('.').next().unwrap_or(version)
+}
+
+/// Whether a peer speaking protocol `version` can talk to this SDK.
+pub fn protocol_compatible(version: &str) -> bool {
+    protocol_major(version) == protocol_major(PROTOCOL_VERSION)
+}
+
+/// Whether a release's `abi` is a plugin process this SDK can run: `process/`
+/// and a compatible protocol version.
+pub fn process_abi_compatible(abi: &str) -> bool {
+    abi.strip_prefix("process/")
+        .is_some_and(protocol_compatible)
+}
+
+/// The build of a plugin process this platform runs, as a Rust target triple,
+/// or `None` where sicompass ships no plugin builds.
+///
+/// Linux plugins are static musl builds, whatever the app was built against:
+/// one runs on every distribution, NixOS included, where a glibc build finds
+/// no loader at `/lib64`.
+pub fn plugin_target() -> Option<&'static str> {
+    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        Some("aarch64-apple-darwin")
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        Some("x86_64-apple-darwin")
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        Some("x86_64-unknown-linux-musl")
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        Some("aarch64-unknown-linux-musl")
+    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        Some("x86_64-pc-windows-msvc")
+    } else if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
+        Some("aarch64-pc-windows-msvc")
+    } else {
+        None
+    }
+}
+
+/// The file name of a plugin process's executable for `target`: `entry`, plus
+/// `.exe` for Windows.
+pub fn executable_name(entry: &str, target: &str) -> String {
+    if target.contains("-windows-") {
+        format!("{entry}.exe")
+    } else {
+        entry.to_owned()
+    }
+}
+
 /// The `wasi:*` interfaces every plugin may import, without their `@version`.
 ///
 /// What `std` for `wasm32-wasip2` asks for (measured on a real guest), plus
@@ -155,8 +216,22 @@ pub const STORAGE_GUEST_DIR: &str = "/storage";
 /// deduplicated, stable across key order and case. Stored when the user grants
 /// access, and compared on every load, so an update asking for more is noticed.
 /// `storage` is not included: a folder of the plugin's own grants nothing.
+///
+/// A plugin process's line starts with `process;`: the user approved a program
+/// that runs with their rights, so the same plugin moving from the WASM sandbox
+/// to a process is asked about again, whatever its `permissions` say.
 pub fn approval_fingerprint(m: &crate::plugin_manifest::PluginManifest) -> String {
-    access_fingerprint(&m.allowed_hosts(), &m.permissions)
+    let access = access_fingerprint(&m.allowed_hosts(), &m.permissions);
+    if m.plugin_type == crate::plugin_manifest::PluginType::Process {
+        process_fingerprint(&access)
+    } else {
+        access
+    }
+}
+
+/// The approval line of a plugin process with `access`.
+pub fn process_fingerprint(access: &str) -> String {
+    format!("process;{access}")
 }
 
 /// [`approval_fingerprint`] from its parts, for a release that is not unpacked
@@ -180,10 +255,12 @@ pub fn access_fingerprint(allowed_hosts: &[String], p: &Permissions) -> String {
     )
 }
 
-/// Whether a manifest asks for anything the user has to approve.
+/// Whether a manifest asks for anything the user has to approve. A plugin
+/// process always does: it is a program, and runs with the user's rights.
 pub fn needs_approval(m: &crate::plugin_manifest::PluginManifest) -> bool {
     let p = &m.permissions;
-    !(p.filesystem.is_empty() && p.process.is_empty() && p.sockets.is_empty())
+    m.plugin_type == crate::plugin_manifest::PluginType::Process
+        || !(p.filesystem.is_empty() && p.process.is_empty() && p.sockets.is_empty())
         || reaches_any_server(&m.allowed_hosts())
 }
 
@@ -375,6 +452,39 @@ pub fn check_locale_prefix(plugin_name: &str, source: &str) -> Result<(), String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_plugin_process_always_needs_approval_under_a_line_of_its_own() {
+        let parse = |t: &str| {
+            crate::plugin_manifest::parse_manifest(&format!(
+                r#"{{ "name": "x", "displayName": "x", "type": "{t}", "entry": "p" }}"#
+            ))
+            .unwrap()
+        };
+        let (wasm, process) = (parse("wasm"), parse("process"));
+        assert!(!needs_approval(&wasm));
+        assert!(needs_approval(&process));
+        assert_ne!(approval_fingerprint(&wasm), approval_fingerprint(&process));
+        assert!(approval_fingerprint(&process).starts_with("process;"));
+    }
+
+    #[test]
+    fn process_abis_are_told_apart_from_wasm_and_by_major() {
+        assert!(process_abi_compatible(PROCESS_ABI));
+        assert!(process_abi_compatible("process/1.4"));
+        assert!(!process_abi_compatible("process/2.0"));
+        assert!(!process_abi_compatible(ABI_VERSION));
+        assert!(protocol_compatible(PROTOCOL_VERSION));
+        assert!(!protocol_compatible("0.2.0"));
+    }
+
+    #[test]
+    fn this_platform_has_a_plugin_target_and_windows_adds_exe() {
+        let t = plugin_target().expect("CI platforms all have one");
+        assert_eq!(executable_name("plugin", t), format!("plugin{}", std::env::consts::EXE_SUFFIX));
+        assert_eq!(executable_name("plugin", "x86_64-pc-windows-msvc"), "plugin.exe");
+        assert_eq!(executable_name("plugin", "aarch64-apple-darwin"), "plugin");
+    }
 
     fn iface(name: &str, fns: &[&str]) -> ImportedInterface {
         ImportedInterface {

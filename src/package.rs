@@ -9,6 +9,11 @@
 //! | `release.json` | [`ReleaseInfo`]: name, version, ABI, permissions, service, the archive's SHA-256 |
 //! | `release.json.sig` | Ed25519 over the exact bytes of `release.json`, base64 |
 //!
+//! A plugin process is a program, so its release has one archive per platform
+//! instead of `plugin.tar.gz`: `plugin-<target>.tar.gz` ([`archive_file`]), each
+//! with that platform's executable, and `release.json` names each by its hash in
+//! `targets`. Still one `release.json` and one signature.
+//!
 //! The signature covers `release.json`, which pins the archive by hash. So the
 //! Store can show version, permissions and tier from a small download and verify
 //! the archive afterwards, and a release is one signature to check.
@@ -16,6 +21,7 @@
 //! Keys are Ed25519, stored as base64 of the 32-byte secret (a seed). A public key
 //! is base64 of its 32 bytes, which is what the store lists.
 
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
@@ -56,8 +62,19 @@ pub struct ReleaseInfo {
     pub allowed_hosts: Vec<String>,
     #[serde(default)]
     pub service: Option<Service>,
-    /// SHA-256 of `plugin.tar.gz`, lowercase hex.
+    /// SHA-256 of `plugin.tar.gz`, lowercase hex. Empty for a plugin process,
+    /// which names its archives in `targets`.
+    #[serde(default)]
     pub archive_sha256: String,
+    /// A plugin process's archives: target triple to the SHA-256 of
+    /// `plugin-<target>.tar.gz`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub targets: BTreeMap<String, String>,
+}
+
+/// The archive of a plugin process's release for `target`.
+pub fn archive_file(target: &str) -> String {
+    format!("plugin-{target}.tar.gz")
 }
 
 impl ReleaseInfo {
@@ -76,13 +93,62 @@ impl ReleaseInfo {
             allowed_hosts: manifest.allowed_hosts(),
             service: manifest.service.clone(),
             archive_sha256: sha256_hex(archive),
+            targets: BTreeMap::new(),
         })
+    }
+
+    /// The release description of a plugin process: its manifest and one
+    /// archive per target triple.
+    pub fn new_process(
+        manifest: &PluginManifest,
+        archives: &BTreeMap<String, Vec<u8>>,
+    ) -> Result<Self, String> {
+        if archives.is_empty() {
+            return Err("a release needs an archive for at least one target".to_owned());
+        }
+        let mut info = ReleaseInfo::new(manifest, &[])?;
+        info.abi = crate::plugin_abi::PROCESS_ABI.to_owned();
+        info.archive_sha256 = String::new();
+        info.targets = archives
+            .iter()
+            .map(|(t, a)| (t.clone(), sha256_hex(a)))
+            .collect();
+        Ok(info)
+    }
+
+    /// Whether this is a plugin process rather than a WASM component.
+    pub fn is_process(&self) -> bool {
+        self.abi.starts_with("process/")
+    }
+
+    /// The archive to download for `target` (see
+    /// [`crate::plugin_abi::plugin_target`]) and the SHA-256 it must have.
+    /// A WASM component has one archive for every platform.
+    pub fn archive_for(&self, target: Option<&str>) -> Result<(String, &str), String> {
+        if !self.is_process() {
+            return Ok((ARCHIVE_FILE.to_owned(), &self.archive_sha256));
+        }
+        let target = target.ok_or("sicompass has no plugin builds for this platform")?;
+        self.targets
+            .get(target)
+            .map(|sha| (archive_file(target), sha.as_str()))
+            .ok_or_else(|| {
+                format!(
+                    "{} {} has no build for this computer ({target})",
+                    self.name, self.version
+                )
+            })
     }
 
     /// What the user approves by installing this release, in the form
     /// `settings.json` records (`plugin_abi::approval_fingerprint`).
     pub fn approval_fingerprint(&self) -> String {
-        crate::plugin_abi::access_fingerprint(&self.allowed_hosts, &self.permissions)
+        let access = crate::plugin_abi::access_fingerprint(&self.allowed_hosts, &self.permissions);
+        if self.is_process() {
+            crate::plugin_abi::process_fingerprint(&access)
+        } else {
+            access
+        }
     }
 
     /// Whether this release asks for access `installed` does not have: a host,
@@ -94,7 +160,12 @@ impl ReleaseInfo {
             now.iter().map(norm).any(|x| !before.contains(&x))
         }
         let (p, q) = (&self.permissions, &installed.permissions);
-        new_items(&self.allowed_hosts, &installed.allowed_hosts())
+        // From the sandbox to a program with the user's rights is more access,
+        // whatever the lists say.
+        let leaves_the_sandbox = self.is_process()
+            && installed.plugin_type != crate::plugin_manifest::PluginType::Process;
+        leaves_the_sandbox
+            || new_items(&self.allowed_hosts, &installed.allowed_hosts())
             || new_items(&p.filesystem, &q.filesystem)
             || new_items(&p.process, &q.process)
             || new_items(&p.sockets, &q.sockets)
@@ -215,29 +286,57 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Verify a whole release: the signature over `release.json`, then the archive
-/// against the hash it names. Returns the parsed release on success.
+/// against the hash it names for this platform. Returns the parsed release on
+/// success.
 pub fn verify_release(
     release_json: &[u8],
     signature_b64: &str,
     public_b64: &str,
     archive: &[u8],
 ) -> Result<ReleaseInfo, String> {
-    verify(release_json, signature_b64, public_b64)?;
-    let info: ReleaseInfo = serde_json::from_slice(release_json)
-        .map_err(|e| format!("release.json does not parse: {e}"))?;
+    verify_release_for(
+        release_json,
+        signature_b64,
+        public_b64,
+        crate::plugin_abi::plugin_target(),
+        archive,
+    )
+}
+
+/// [`verify_release`] for the archive of `target`, which need not be this
+/// platform's: the release tool checks every archive it signed.
+pub fn verify_release_for(
+    release_json: &[u8],
+    signature_b64: &str,
+    public_b64: &str,
+    target: Option<&str>,
+    archive: &[u8],
+) -> Result<ReleaseInfo, String> {
+    let info = verify_release_info(release_json, signature_b64, public_b64)?;
+    let (file, expected) = info.archive_for(target)?;
     if archive.len() > MAX_ARCHIVE_BYTES {
         return Err(format!(
             "the archive is larger than {MAX_ARCHIVE_BYTES} bytes"
         ));
     }
     let actual = sha256_hex(archive);
-    if !actual.eq_ignore_ascii_case(&info.archive_sha256) {
+    if !actual.eq_ignore_ascii_case(expected) {
         return Err(format!(
-            "the archive's SHA-256 is {actual}, but release.json says {}",
-            info.archive_sha256
+            "the SHA-256 of {file} is {actual}, but release.json says {expected}"
         ));
     }
     Ok(info)
+}
+
+/// The signature over `release.json`, and its contents: what the Store reads
+/// before it knows which archive to download.
+pub fn verify_release_info(
+    release_json: &[u8],
+    signature_b64: &str,
+    public_b64: &str,
+) -> Result<ReleaseInfo, String> {
+    verify(release_json, signature_b64, public_b64)?;
+    serde_json::from_slice(release_json).map_err(|e| format!("release.json does not parse: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +347,9 @@ pub fn verify_release(
 /// `plugin.json`, the manifest's `entry`, everything under `assets/`, the `.ftl`
 /// files in `locales/`, and `LICENSE` / `THIRD-PARTY-LICENSES.html` if present.
 /// A symlink anywhere is an error: an archive carries plain files only.
+///
+/// For a plugin process the entry is left out: each target's archive gets its
+/// own build of it ([`build_process_archive`]).
 pub fn collect_files(plugin_dir: &Path, manifest: &PluginManifest) -> Result<Vec<String>, String> {
     let mut files = vec!["plugin.json".to_owned()];
     let entry = safe_relative(&manifest.entry).ok_or_else(|| {
@@ -256,7 +358,9 @@ pub fn collect_files(plugin_dir: &Path, manifest: &PluginManifest) -> Result<Vec
             manifest.entry
         )
     })?;
-    files.push(entry);
+    if manifest.plugin_type != crate::plugin_manifest::PluginType::Process {
+        files.push(entry);
+    }
     for optional in ["LICENSE", "THIRD-PARTY-LICENSES.html"] {
         if plugin_dir.join(optional).is_file() {
             files.push(optional.to_owned());
@@ -316,16 +420,49 @@ fn walk(
 /// entries, mtime 0, owner 0, mode 0644. The same inputs give the same bytes, so
 /// a release can be rebuilt and compared.
 pub fn build_archive(plugin_dir: &Path, files: &[String]) -> Result<Vec<u8>, String> {
-    let mut sorted = files.to_vec();
-    sorted.sort();
+    let mut entries = Vec::new();
+    for f in files {
+        let data = std::fs::read(plugin_dir.join(f)).map_err(|e| format!("{f}: {e}"))?;
+        entries.push((f.clone(), data, 0o644));
+    }
+    tar_gz(entries)
+}
+
+/// [`build_archive`] for one target of a plugin process: the shared `files`,
+/// plus `executable` as [`crate::plugin_abi::executable_name`] of the
+/// manifest's `entry`, mode 0755.
+pub fn build_process_archive(
+    plugin_dir: &Path,
+    files: &[String],
+    manifest: &PluginManifest,
+    target: &str,
+    executable: &[u8],
+) -> Result<Vec<u8>, String> {
+    let entry = safe_relative(&manifest.entry)
+        .ok_or_else(|| format!("`entry` must be a relative path: {}", manifest.entry))?;
+    let name = crate::plugin_abi::executable_name(&entry, target);
+    let mut entries = Vec::new();
+    for f in files {
+        if *f == name {
+            continue;
+        }
+        let data = std::fs::read(plugin_dir.join(f)).map_err(|e| format!("{f}: {e}"))?;
+        entries.push((f.clone(), data, 0o644));
+    }
+    entries.push((name, executable.to_vec(), 0o755));
+    tar_gz(entries)
+}
+
+/// A reproducible `tar.gz`: sorted entries, mtime 0, owner 0.
+fn tar_gz(mut entries: Vec<(String, Vec<u8>, u32)>) -> Result<Vec<u8>, String> {
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
     let gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
     let mut tar = tar::Builder::new(gz);
     tar.mode(tar::HeaderMode::Deterministic);
-    for f in &sorted {
-        let data = std::fs::read(plugin_dir.join(f)).map_err(|e| format!("{f}: {e}"))?;
+    for (f, data, mode) in &entries {
         let mut header = tar::Header::new_gnu();
         header.set_size(data.len() as u64);
-        header.set_mode(0o644);
+        header.set_mode(*mode);
         header.set_mtime(0);
         header.set_uid(0);
         header.set_gid(0);
@@ -403,6 +540,9 @@ pub fn read_archive(archive: &[u8]) -> Result<Vec<(String, Vec<u8>)>, String> {
 }
 
 /// Write the files of an archive under `dest`, which must not exist yet.
+///
+/// Files come out mode 0644 whatever the archive says: the Store makes a plugin
+/// process's executable runnable itself, and nothing else.
 pub fn unpack(archive: &[u8], dest: &Path) -> Result<Vec<PathBuf>, String> {
     if dest.exists() {
         return Err(format!("{} already exists", dest.display()));
@@ -591,6 +731,122 @@ mod tests {
             assert!(newer.asks_for_more_than(&before), "{extra}");
             assert_ne!(newer.approval_fingerprint(), info.approval_fingerprint());
         }
+    }
+
+    fn process_manifest(version: &str) -> PluginManifest {
+        crate::plugin_manifest::parse_manifest(&format!(
+            r#"{{ "name": "demo", "displayName": "Demo", "type": "process", "entry": "plugin",
+                 "version": "{version}", "permissions": {{ "process": ["git"] }} }}"#
+        ))
+        .unwrap()
+    }
+
+    fn process_release() -> (BTreeMap<String, Vec<u8>>, ReleaseInfo, Vec<u8>, String, String) {
+        let dir = plugin_dir();
+        let m = process_manifest("2.0.0");
+        let files = collect_files(dir.path(), &m).unwrap();
+        assert!(!files.contains(&"plugin".to_owned()), "each target brings its own");
+        let mut archives = BTreeMap::new();
+        for (target, exe) in [
+            ("x86_64-unknown-linux-musl", &b"\x7fELF linux"[..]),
+            ("aarch64-apple-darwin", b"macho"),
+            ("x86_64-pc-windows-msvc", b"MZ windows"),
+        ] {
+            archives.insert(
+                target.to_owned(),
+                build_process_archive(dir.path(), &files, &m, target, exe).unwrap(),
+            );
+        }
+        let info = ReleaseInfo::new_process(&m, &archives).unwrap();
+        let json = serde_json::to_vec_pretty(&info).unwrap();
+        let (secret, public) = generate_keypair().unwrap();
+        let sig = sign(&json, &secret).unwrap();
+        (archives, info, json, sig, public)
+    }
+
+    #[test]
+    fn a_process_release_carries_one_archive_per_target_under_one_signature() {
+        let (archives, info, json, sig, public) = process_release();
+        assert!(info.is_process());
+        assert_eq!(info.abi, crate::plugin_abi::PROCESS_ABI);
+        assert_eq!(info.targets.len(), 3);
+        for (target, archive) in &archives {
+            let got =
+                verify_release_for(&json, &sig, &public, Some(target), archive).unwrap();
+            assert_eq!(got, info);
+        }
+        // Each archive has its target's executable, runnable, under its name.
+        let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(
+            &archives["x86_64-pc-windows-msvc"][..],
+        ));
+        let exe = tar
+            .entries()
+            .unwrap()
+            .map(Result::unwrap)
+            .find(|e| e.path().unwrap().to_str() == Some("plugin.exe"))
+            .expect("plugin.exe");
+        assert_eq!(exe.header().mode().unwrap(), 0o755);
+        let names: Vec<String> = read_archive(&archives["aarch64-apple-darwin"])
+            .unwrap()
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.contains(&"plugin".to_owned()) && names.contains(&"plugin.json".to_owned()));
+    }
+
+    #[test]
+    fn a_process_release_fingerprints_like_its_manifest_and_leaving_wasm_is_more() {
+        let (_, info, _, _, _) = process_release();
+        assert_eq!(
+            info.approval_fingerprint(),
+            crate::plugin_abi::approval_fingerprint(&process_manifest("2.0.0"))
+        );
+        assert!(!info.asks_for_more_than(&process_manifest("1.0.0")));
+        // The same plugin, same permissions, installed as a WASM component.
+        let mut wasm = process_manifest("1.0.0");
+        wasm.plugin_type = crate::plugin_manifest::PluginType::Wasm;
+        assert!(info.asks_for_more_than(&wasm));
+    }
+
+    #[test]
+    fn a_process_release_refuses_a_missing_target_and_another_targets_archive() {
+        let (archives, info, json, sig, public) = process_release();
+        let e = info.archive_for(Some("riscv64gc-unknown-linux-musl")).unwrap_err();
+        assert!(e.contains("no build for this computer"), "{e}");
+        assert!(info.archive_for(None).is_err());
+        assert_eq!(
+            info.archive_for(Some("aarch64-apple-darwin")).unwrap().0,
+            "plugin-aarch64-apple-darwin.tar.gz"
+        );
+        let e = verify_release_for(
+            &json,
+            &sig,
+            &public,
+            Some("aarch64-apple-darwin"),
+            &archives["x86_64-unknown-linux-musl"],
+        )
+        .unwrap_err();
+        assert!(e.contains("SHA-256"), "{e}");
+    }
+
+    #[test]
+    fn an_app_that_runs_only_wasm_reads_a_process_release_and_sees_its_abi() {
+        // What an older app parses: no `targets` field it knows, `abi` it
+        // compares, and an `archiveSha256` that is still present.
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Old {
+            abi: String,
+            archive_sha256: String,
+        }
+        let (_, _, json, _, _) = process_release();
+        let old: Old = serde_json::from_slice(&json).unwrap();
+        assert_ne!(old.abi, crate::plugin_abi::ABI_VERSION);
+        assert!(old.archive_sha256.is_empty());
+        // And a WASM release still has no `targets` at all.
+        let wasm = ReleaseInfo::new(&manifest("1.0.0"), b"x").unwrap();
+        assert!(!serde_json::to_string(&wasm).unwrap().contains("targets"));
+        assert_eq!(wasm.archive_for(None).unwrap().0, ARCHIVE_FILE);
     }
 
     #[test]

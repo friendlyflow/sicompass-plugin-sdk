@@ -6,9 +6,15 @@ definition of the WASM plugin interface. It holds five crates:
 - `sicompass-sdk` (the root): FFON, the `Provider` trait, tags, timeline, input,
   and behind the default `host` feature the parts only the app process uses
   (platform directories, trash, localisation, registries). On crates.io.
-- `sicompass-pdk` (`sicompass-pdk/`): the guest kit. The `Plugin` trait and
-  `export_plugin!`, over wit-bindgen. On crates.io. Its own workspace root,
-  because it only builds for a WASM target.
+  Behind `ipc`, `src/plugin_ipc/`: the protocol between the app and a plugin
+  process (postcard in `u32`-prefixed frames). Behind `plugin`, `src/plugin/`:
+  the `Plugin` trait, `main!`, and the plugin side of that protocol, which is
+  what a plugin depends on (`default-features = false, features = ["plugin"]`).
+  See `../sicompass/docs/process-plugins.md`.
+- `sicompass-pdk` (`sicompass-pdk/`): the WASM guest kit, retired. Plugins are
+  processes now (`sicompass_sdk::plugin`). It stays until the app no longer
+  runs WASM, then goes. On crates.io. Its own workspace root, because it only
+  builds for a WASM target.
 - `sicompass-payments` (`sicompass-payments/`): cloud backup for plugins that
   keep their data in their own folder (sicompass's notes and board plugins, and
   any third party's). Snapshots, the backup protocol over the caller's `send`
@@ -90,7 +96,9 @@ instead, or split into separate sentences.
 
 ## Testing
 
-- `cargo test --all` at the root (the SDK, including `wit_contract`).
+- `cargo test --all --features plugin,package` at the root (the SDK, including
+  `wit_contract` and `tests/plugin_process.rs`, which runs a real plugin
+  process built from `tests/fixtures/stdio_plugin.rs`).
 - `cargo check --no-default-features --target wasm32-unknown-unknown`: the guest
   surface of the SDK must not pull in host-only dependencies.
 - `./scripts/verify-guest.sh`: builds a guest and audits its imports.
