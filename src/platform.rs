@@ -214,6 +214,35 @@ pub fn plugins_dir() -> Option<PathBuf> {
     app_config_dir().map(|c| c.join("plugins"))
 }
 
+/// The environment variable listing plugin folders that this computer's
+/// configuration provides, separated like `PATH`. See [`system_plugin_dirs`].
+pub const PLUGIN_PATH_VAR: &str = "SICOMPASS_PLUGIN_PATH";
+
+/// The plugin folders this computer's configuration provides, from
+/// [`PLUGIN_PATH_VAR`], in order. Empty when it is unset.
+///
+/// The desicompass NixOS module sets it for its dev session, pointing at
+/// plugins built from local checkouts. Each folder is laid out like
+/// [`plugins_dir`]: one subfolder per plugin.
+///
+/// A plugin found here takes precedence over the user's copy of the same name,
+/// is never changed by the Store, and runs without asking for approval:
+/// whoever sets the session's environment can already replace sicompass
+/// itself. It is no more confined than any other plugin.
+pub fn system_plugin_dirs() -> Vec<PathBuf> {
+    std::env::var_os(PLUGIN_PATH_VAR)
+        .map(|v| split_plugin_path(&v))
+        .unwrap_or_default()
+}
+
+/// The folders in one [`PLUGIN_PATH_VAR`] value, skipping empty entries (a
+/// stray separator), which would otherwise mean the current directory.
+fn split_plugin_path(value: &std::ffi::OsStr) -> Vec<PathBuf> {
+    std::env::split_paths(value)
+        .filter(|p| !p.as_os_str().is_empty())
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Filesystem helpers
 // ---------------------------------------------------------------------------
@@ -765,6 +794,17 @@ mod tests {
     fn test_provider_config_path() {
         let p = provider_config_path("filebrowser").unwrap();
         assert!(p.to_string_lossy().ends_with("filebrowser.json"));
+    }
+
+    #[test]
+    fn plugin_path_splits_like_path_and_skips_empty_entries() {
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        let value = format!("{sep}/a/plugins{sep}{sep}/b/plugins{sep}");
+        assert_eq!(
+            split_plugin_path(std::ffi::OsStr::new(&value)),
+            [PathBuf::from("/a/plugins"), PathBuf::from("/b/plugins")]
+        );
+        assert!(split_plugin_path(std::ffi::OsStr::new("")).is_empty());
     }
 
     #[test]

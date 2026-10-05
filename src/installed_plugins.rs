@@ -36,6 +36,56 @@ pub fn discover_in(plugins_dir: &Path) -> Vec<(PathBuf, Result<PluginManifest, S
         .collect()
 }
 
+/// Where an installed plugin came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PluginOrigin {
+    /// A folder this computer's configuration provides
+    /// ([`crate::platform::system_plugin_dirs`]): it wins over the user's copy,
+    /// the Store leaves it alone, and it needs no approval.
+    System,
+    /// The user's plugins folder ([`crate::platform::plugins_dir`]), which the
+    /// Store installs into.
+    User,
+}
+
+/// One plugin found by [`discover_all`]: its folder, where that folder came
+/// from, and its parsed manifest or the reason it would not parse.
+pub type Discovered = (PathBuf, PluginOrigin, Result<PluginManifest, String>);
+
+/// Every installed plugin: the system folders first, then the user's, each
+/// through [`discover_in`].
+///
+/// One per manifest name, the first found kept, so a system plugin hides the
+/// user's copy of the same name (and its strings register first). A manifest
+/// that does not parse has no name to hide anything by, so it is always kept.
+pub fn discover_all() -> Vec<Discovered> {
+    discover_all_in(
+        &crate::platform::system_plugin_dirs(),
+        crate::platform::plugins_dir().as_deref(),
+    )
+}
+
+/// [`discover_all`] with the folders handed in.
+pub fn discover_all_in(system: &[PathBuf], user: Option<&Path>) -> Vec<Discovered> {
+    let dirs = system
+        .iter()
+        .map(|d| (d.as_path(), PluginOrigin::System))
+        .chain(user.map(|d| (d, PluginOrigin::User)));
+    let mut seen = HashSet::new();
+    let mut found = Vec::new();
+    for (dir, origin) in dirs {
+        for (plugin_dir, manifest) in discover_in(dir) {
+            if let Ok(m) = &manifest
+                && !seen.insert(m.name.clone())
+            {
+                continue;
+            }
+            found.push((plugin_dir, origin, manifest));
+        }
+    }
+    found
+}
+
 /// Register a plugin's `locales/*.ftl` into the shared Fluent bundles
 /// ([`crate::localize`]), so its ids resolve like a built-in's.
 ///
@@ -147,6 +197,87 @@ mod tests {
     #[test]
     fn discover_in_a_missing_dir_is_empty() {
         assert!(discover_in(Path::new("/no/such/plugins/dir")).is_empty());
+    }
+
+    fn manifest(name: &str) -> String {
+        format!(r#"{{"name":"{name}","displayName":"{name}","type":"process","entry":"plugin"}}"#)
+    }
+
+    /// `(folder name, origin)` per plugin found, `err:` for a bad manifest.
+    fn summary(found: &[Discovered]) -> Vec<(String, PluginOrigin)> {
+        found
+            .iter()
+            .map(|(dir, origin, m)| {
+                let dir = dir.file_name().unwrap().to_string_lossy();
+                let label = match m {
+                    Ok(m) => format!("{}/{}", dir, m.name),
+                    Err(_) => format!("err:{dir}"),
+                };
+                (label, *origin)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn discover_all_puts_system_plugins_first_and_hides_the_users_copy() {
+        let system = tempfile::tempdir().unwrap();
+        let user = tempfile::tempdir().unwrap();
+        plugin(system.path(), "terminal", &manifest("terminal"), None);
+        plugin(user.path(), "terminal", &manifest("terminal"), None);
+        plugin(user.path(), "notes", &manifest("notes"), None);
+
+        let found = discover_all_in(&[system.path().to_owned()], Some(user.path()));
+        assert_eq!(
+            summary(&found),
+            [
+                ("terminal/terminal".to_owned(), PluginOrigin::System),
+                ("notes/notes".to_owned(), PluginOrigin::User),
+            ]
+        );
+        assert!(found[0].0.starts_with(system.path()));
+    }
+
+    #[test]
+    fn discover_all_dedups_by_manifest_name_not_folder_name() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        plugin(first.path(), "term-dev", &manifest("terminal"), None);
+        plugin(second.path(), "terminal", &manifest("terminal"), None);
+
+        let found = discover_all_in(&[first.path().to_owned(), second.path().to_owned()], None);
+        assert_eq!(
+            summary(&found),
+            [("term-dev/terminal".to_owned(), PluginOrigin::System)]
+        );
+    }
+
+    #[test]
+    fn discover_all_keeps_every_manifest_that_does_not_parse() {
+        let system = tempfile::tempdir().unwrap();
+        let user = tempfile::tempdir().unwrap();
+        plugin(system.path(), "broken", "{ not json", None);
+        plugin(user.path(), "broken", "{ not json", None);
+
+        let found = discover_all_in(&[system.path().to_owned()], Some(user.path()));
+        assert_eq!(
+            summary(&found),
+            [
+                ("err:broken".to_owned(), PluginOrigin::System),
+                ("err:broken".to_owned(), PluginOrigin::User),
+            ]
+        );
+    }
+
+    #[test]
+    fn discover_all_with_no_folders_or_missing_ones_is_empty() {
+        assert!(discover_all_in(&[], None).is_empty());
+        assert!(
+            discover_all_in(
+                &[PathBuf::from("/no/such/system/dir")],
+                Some(Path::new("/no/such/user/dir"))
+            )
+            .is_empty()
+        );
     }
 
     #[test]
