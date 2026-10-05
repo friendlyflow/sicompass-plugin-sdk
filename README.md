@@ -116,8 +116,9 @@ cp target/release/hello ~/.config/sicompass/plugins/hello/plugin
 `entry` has no extension: Sicompass adds `.exe` on Windows. The plugins folder
 is `~/.config/sicompass/plugins/` on Linux, `~/Library/Application
 Support/sicompass/plugins/` on macOS and `%APPDATA%\sicompass\plugins\` on
-Windows. A plugin installed by hand asks for the user's approval the first time,
-and needs a restart. Then enable it under Settings, "Available programs:".
+Windows. A plugin installed by hand does not run until the user approves it: restart
+Sicompass, open store, then programs, and press approve on its entry, which
+shows what it declares first. Approving also enables it.
 
 A release is one archive per platform, packed and signed with
 `tools/sicompass-plugin` (`pack --bin <target>=<executable>` once per platform,
