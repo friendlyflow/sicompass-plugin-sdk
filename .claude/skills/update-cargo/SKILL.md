@@ -1,6 +1,6 @@
 ---
 name: update-cargo
-description: Refresh this repo's flake.lock and check the SDK, the pdk and the examples against freshly resolved dependencies
+description: Refresh this repo's flake.lock and check the SDK, the tool and the example against freshly resolved dependencies
 argument-hint: "[push]"
 disable-model-invocation: true
 model: sonnet
@@ -15,19 +15,20 @@ run from a sicompass checkout. **Prefix every command with `cd PROJECT_ROOT &&`.
 **This repo gitignores `Cargo.lock`**, the normal convention for a published
 library: CI and every consumer resolve the newest semver-compatible versions on
 a fresh checkout. So there is no lockfile to commit here. The only committed lock
-is `flake.lock` (the toolchain and wasm-tools).
+is `flake.lock` (the toolchain).
 
 1. `git status --short` must be empty.
-2. `cargo update` at the root, in `sicompass-pdk/` and in each `examples/*`. Each
-   is its own workspace root with its own untracked lockfile.
+2. `cargo update` at the root, in `tools/sicompass-plugin`, `sicompass-payments`
+   and `examples/hello-plugin`. Each is its own workspace root with its own
+   untracked lockfile.
 3. `nix flake update`. That moves nixpkgs and rust-overlay, so the Rust
    toolchain may move too.
 4. Inside `nix develop`:
-   - `cargo test --all`, and `cargo build --no-default-features` (the guest
-     surface of the SDK)
-   - `cargo build --target wasm32-unknown-unknown` in `sicompass-pdk/`. Do not
-     run `cargo test` there, since it has no host target to run on.
-   - `./scripts/verify-guest.sh`
+   - `cargo test --all --features plugin,package`, and
+     `cargo check --no-default-features --features plugin` (the plugin half of
+     the SDK, without the app's dependencies)
+   - `cargo test` in `tools/sicompass-plugin`, `sicompass-payments` and
+     `examples/hello-plugin`
    A failure from a bumped crate is a report, not a refactor. Name the crate and
    the configuration, and stop.
 5. `git diff --stat` shows only `flake.lock`. Commit it:

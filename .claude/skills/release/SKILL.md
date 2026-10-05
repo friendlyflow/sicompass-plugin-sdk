@@ -1,12 +1,12 @@
 ---
 name: release
-description: Bump and publish sicompass-sdk (and sicompass-pdk) to crates.io
+description: Bump and publish sicompass-sdk to crates.io
 argument-hint: "[major|minor|patch]"
 disable-model-invocation: true
 model: sonnet
 ---
 
-Publish a new `sicompass-sdk` (and, when needed, `sicompass-pdk`) to crates.io.
+Publish a new `sicompass-sdk` to crates.io.
 
 This file is also what `/release sicompass-plugin-sdk` follows when it is run
 from a sicompass checkout, so `PROJECT_ROOT` is this repo's root.
@@ -41,29 +41,35 @@ window short.
    Every `[patch.crates-io]` in `../sicompass/Cargo.toml` must be commented out.
 
 2. **Decide the version.** Compare `version` in `Cargo.toml` with
-   `git tag --sort=-v:refname | head -1`. A **breaking** bump (0.x: `0.8.0` ->
-   `0.9.0`) is required when any of these changed:
-   - `wit/sicompass-plugin.wit`, since a changed export or import breaks every
-     built guest. Also move the WIT `package` version.
-   - a `Provider` trait method signature, which every built-in implements
-   - the `Plugin` trait or `export_plugin!` in `sicompass-pdk`
-   A patch bump covers docs, internals and formatting only.
+   `git tag --sort=-v:refname | head -1`. A **breaking** bump (0.x: `0.9.x` ->
+   `0.10.0`) is required when any of these changed, because every sibling that
+   pins `sicompass-sdk = "0.9.0"` takes a new patch release automatically:
+   - a **public item removed or changed** in the SDK (a function, a type, a
+     variant, a `Provider` method signature)
+   - the plugin protocol (`src/plugin_ipc`): a new `Request` / `HostRequest`
+     variant at the end is only a minor bump of `PROTOCOL_VERSION`, anything
+     else is a major one and needs a breaking SDK bump too
+   - the `Plugin` trait in `src/plugin`
+   A patch bump covers additions, docs, internals and formatting only.
+   (0.9.1 removed `WIT_SOURCE`, `audit_component` and `PluginType::Wasm` and was
+   still released as a patch: nothing pinning 0.9 used them. Do not repeat that.)
 
-3. **Bump `Cargo.toml`.** There is no CHANGELOG in this repo.
+3. **Bump `Cargo.toml`**, and `tools/sicompass-plugin/Cargo.toml`'s
+   `sicompass-sdk` pin to match. There is no CHANGELOG in this repo.
 
-4. **Decide whether `sicompass-pdk` ships too.** Ship it whenever the WIT, the
-   `Plugin` trait or `export_plugin!` changed. Bump both its `version` and its
-   `sicompass-sdk = { version = "...", path = "..", ... }` pin, because
-   `cargo publish` strips the path and keeps the version, so that pin is what a
-   plugin author resolves.
+4. **The release tool** (`tools/sicompass-plugin`) is not on crates.io. The
+   plugin repos' release workflows install it from this repo by git tag
+   (`SDK_TAG` in their `release.yml` and `ci.yml`), so tag this repo before any
+   plugin is released, and move `SDK_TAG` in the plugin repos when the tool changes.
 
-5. **Checks** (inside `nix develop`, which has both guest targets):
+5. **Checks:**
    ```sh
-   cargo test --all
-   cargo test --test wit_contract
-   cargo check --no-default-features --target wasm32-unknown-unknown
+   cargo test --all --features plugin,package
+   cargo check --no-default-features --features plugin
    cargo fmt --all -- --check
-   ./scripts/verify-guest.sh
+   (cd tools/sicompass-plugin && cargo test)
+   (cd sicompass-payments && cargo test)
+   (cd examples/hello-plugin && cargo test)
    ```
    Then prove the app builds against it without committing a patch:
    ```sh
@@ -71,6 +77,8 @@ window short.
    cargo test --workspace \
      --config 'patch.crates-io.sicompass-sdk.path="../sicompass-plugin-sdk"'
    ```
+   And grep the siblings that pin the SDK (`sicompass-ui`, `loginsicompass`,
+   `desicompass`) for anything the release removed.
 
 6. **Commit, push and tag.**
    ```sh
@@ -85,36 +93,18 @@ window short.
 7. **Publish `sicompass-sdk` by hand:** `cargo publish --dry-run`, then
    `cargo publish`.
 
-8. **Publish `sicompass-pdk`**, if step 4 said so. It must come second, because
-   crates.io has to hold the SDK version it pins:
-   ```sh
-   cd sicompass-pdk
-   cargo publish --dry-run --target wasm32-unknown-unknown
-   cargo publish --target wasm32-unknown-unknown
-   ```
-   It is its own workspace root, so `cargo test` at the repo root does not cover
-   it, and it only really builds for a WASM target. Use `--no-verify` only as a
-   last resort, and then build the packaged `.crate` for the WASM target against
-   the published SDK by hand, which also confirms the `wit/` symlink
-   materialized as a real file.
+8. **After publishing**, each plugin repo drops its temporary `[patch.crates-io]`
+   git-rev section and resolves `sicompass-sdk = "X.Y.Z"` from crates.io, and the
+   app does the same (`/release` in each). Their `Cargo.lock` lines change from
+   a git source to the registry.
 
-8b. **Publish `sicompass-plugin`** (the tool in `tools/sicompass-plugin`) when it
-   or the `package` / `plugin_abi` code it uses changed. Same rule as the pdk:
-   after the SDK, with its `sicompass-sdk` pin moved to the new version.
-
-9. **Rebuild sicompass's committed WASM fixtures** if the WIT changed. Build
-   `examples/hello-plugin` and `examples/net-plugin`, and copy the components to
-   `../sicompass/src/sicompass/tests/fixtures/wasm/{hello,net}.wasm`. The header
-   of sicompass's `tests/wasm_plugin.rs` has the exact commands. Also copy the WIT
-   to `../sicompass/src/sicompass/wit/`: a test there asserts the two are
-   byte-identical.
-
-10. **Report.** Confirm the version is live (`cargo search sicompass-sdk`), then
+9. **Report.** Confirm the version is live (`cargo search sicompass-sdk`), then
     say the app side is ready: `/release` in sicompass bumps the pin.
 
 ## Notes
 
-- `release.yml` publishes only `sicompass-sdk`. Even with a working token,
-  `sicompass-pdk` has no automated path.
+- `release.yml` publishes only `sicompass-sdk`.
+- `sicompass-pdk` (the WASM kit, last published as 0.6.0) is retired and no
+  longer in this repo. Do not publish it again.
 - A published version cannot be replaced. If a broken one goes out,
   `cargo yank` it and publish the next patch.
