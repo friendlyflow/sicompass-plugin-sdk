@@ -1,37 +1,7 @@
-//! The tool end to end, on the SDK's real example plugins.
-//!
-//! Needs the examples built: `./scripts/verify-guest.sh` at the repo root writes
-//! `examples/*/plugin.wasm`, and CI runs it first.
+//! The tool end to end, on a plugin directory with fake platform builds.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-
-fn example(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples")
-        .join(name)
-}
-
-/// A copy of an example as a plugin directory: plugin.json, plugin.wasm, locales/.
-fn plugin_copy(name: &str) -> tempfile::TempDir {
-    let src = example(name);
-    let wasm = src.join("plugin.wasm");
-    assert!(
-        wasm.is_file(),
-        "{} is missing: run ./scripts/verify-guest.sh at the repo root first",
-        wasm.display()
-    );
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::copy(src.join("plugin.json"), dir.path().join("plugin.json")).unwrap();
-    std::fs::copy(&wasm, dir.path().join("plugin.wasm")).unwrap();
-    if src.join("locales").is_dir() {
-        std::fs::create_dir(dir.path().join("locales")).unwrap();
-        for e in std::fs::read_dir(src.join("locales")).unwrap().flatten() {
-            std::fs::copy(e.path(), dir.path().join("locales").join(e.file_name())).unwrap();
-        }
-    }
-    dir
-}
 
 fn tool(args: &[&str], cwd: &Path) -> (bool, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_sicompass-plugin"))
@@ -63,14 +33,23 @@ fn keypair(dir: &Path, file: &str) -> String {
     String::from_utf8(out.stdout).unwrap().trim().to_owned()
 }
 
+/// `pack` for the two fake builds of [`process_plugin`].
+const PACK: &[&str] = &[
+    "pack",
+    "--bin",
+    "aarch64-apple-darwin=build/mac",
+    "--bin",
+    "x86_64-pc-windows-msvc=build/win.exe",
+];
+
 #[test]
 fn keygen_pack_sign_verify_round_trip() {
-    let dir = plugin_copy("hello-plugin");
+    let dir = process_plugin();
     let public = keypair(dir.path(), "k.key");
 
-    let (ok, out) = tool(&["pack"], dir.path());
+    let (ok, out) = tool(PACK, dir.path());
     assert!(ok, "{out}");
-    assert!(out.contains("hello 0.2.0 (ABI 0.2.0)"), "{out}");
+    assert!(out.contains("proc 1.0.0 (ABI process/1.0)"), "{out}");
     assert!(out.contains("locales/en-US.ftl"), "{out}");
 
     let (ok, out) = tool(&["sign", "--key", "k.key"], dir.path());
@@ -90,10 +69,10 @@ fn keygen_never_overwrites_a_key() {
 
 #[test]
 fn verify_fails_on_a_wrong_key_or_an_edited_release() {
-    let dir = plugin_copy("hello-plugin");
+    let dir = process_plugin();
     keypair(dir.path(), "k.key");
     let other = keypair(dir.path(), "other.key");
-    assert!(tool(&["pack"], dir.path()).0);
+    assert!(tool(PACK, dir.path()).0);
     assert!(tool(&["sign", "--key", "k.key"], dir.path()).0);
 
     let (ok, out) = tool(&["verify", "--pubkey", &other], dir.path());
@@ -122,26 +101,14 @@ fn verify_fails_on_a_wrong_key_or_an_edited_release() {
 
 #[test]
 fn pack_refuses_a_foreign_locale_id() {
-    let dir = plugin_copy("hello-plugin");
+    let dir = process_plugin();
     std::fs::write(
         dir.path().join("locales/nl-BE.ftl"),
-        "hello-ok = ja\nsettings-title = gestolen\n",
+        "proc-ok = ja\nsettings-title = gestolen\n",
     )
     .unwrap();
-    let (ok, out) = tool(&["pack"], dir.path());
+    let (ok, out) = tool(PACK, dir.path());
     assert!(!ok && out.contains("settings-title"), "{out}");
-}
-
-#[test]
-fn pack_refuses_a_network_plugin_without_allowed_hosts() {
-    let dir = plugin_copy("net-plugin");
-    std::fs::write(
-        dir.path().join("plugin.json"),
-        r#"{ "name": "net", "displayName": "net", "entry": "plugin.wasm", "version": "0.2.0" }"#,
-    )
-    .unwrap();
-    let (ok, out) = tool(&["pack"], dir.path());
-    assert!(!ok && out.contains("allowedHosts"), "{out}");
 }
 
 #[test]
@@ -172,7 +139,7 @@ fn a_store_is_checked_signed_and_verified() {
     let path = dir.path().join("store.json");
     let edited = std::fs::read_to_string(&path)
         .unwrap()
-        .replace("hello_plugin", "evil_plugin");
+        .replace("hello-plugin", "evil-plugin");
     std::fs::write(&path, edited).unwrap();
     let (ok, out) = tool(
         &["store-verify", "--pubkey", &public, "store.json"],
@@ -252,7 +219,7 @@ fn a_plugin_process_packs_one_archive_per_target_and_verifies() {
 }
 
 #[test]
-fn a_plugin_process_needs_known_targets_and_a_component_takes_no_bin() {
+fn a_plugin_process_needs_known_targets_and_a_wasm_manifest_is_refused() {
     let dir = process_plugin();
     let (ok, out) = tool(&["pack"], dir.path());
     assert!(!ok && out.contains("--bin"), "{out}");
@@ -267,5 +234,5 @@ fn a_plugin_process_needs_known_targets_and_a_component_takes_no_bin() {
     )
     .unwrap();
     let (ok, out) = tool(&["pack", "--bin", "aarch64-apple-darwin=build/mac"], dir.path());
-    assert!(!ok && out.contains("is for a plugin process"), "{out}");
+    assert!(!ok && out.contains("`wasm` is no longer supported"), "{out}");
 }

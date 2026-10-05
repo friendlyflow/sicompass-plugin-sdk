@@ -4,24 +4,11 @@
 //!
 //! - **Host** (`default`): everything. The sicompass app and the built-in `lib_*`
 //!   provider crates use this and are unaffected by the split.
-//! - **Guest** (`default-features = false`): the portable data model only — FFON,
-//!   tags, timeline records, dashboard types, asset URIs and the `Provider` trait.
-//!   Builds for
-//!   `wasm32-unknown-unknown`. A sandboxed WASM plugin gets host services through
-//!   imported functions rather than by linking them, so the modules that reach the
-//!   OS or rely on process-global state are absent by construction.
-
-// ---------------------------------------------------------------------------
-// The WASM plugin interface
-// ---------------------------------------------------------------------------
-
-/// The canonical `sicompass:plugin` WIT world, embedded at compile time.
-///
-/// This crate is the single source of truth for the interface: plugin authors get
-/// it with the SDK version they build against, and the host repo keeps a vendored
-/// copy (for `wasmtime::component::bindgen!`, which needs a path) guarded by a test
-/// asserting the two are byte-identical.
-pub const WIT_SOURCE: &str = include_str!("../wit/sicompass-plugin.wit");
+//! - **Portable** (`default-features = false`): the data model only: FFON,
+//!   tags, timeline records, dashboard types, asset URIs and the `Provider`
+//!   trait. A plugin adds the `plugin` feature (the `Plugin` trait and its
+//!   runtime) and reaches the app's services through it, so the modules that
+//!   assume they run inside the app are absent.
 
 // ---------------------------------------------------------------------------
 // Portable — available to host and guest alike

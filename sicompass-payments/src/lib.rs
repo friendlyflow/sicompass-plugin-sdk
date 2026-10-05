@@ -2,17 +2,18 @@
 //! service, for any plugin that keeps its data in its own folder.
 //!
 //! The sicompass notes and board plugins use it against the Sicompass Cloud
-//! server, and a third party's plugin can use it against its own. Everything
-//! here runs inside a sandboxed plugin (`wasm32-wasip2`): no threads, no HTTP
-//! client of its own, no app configuration.
+//! server, and a third party's plugin can use it against its own. It brings
+//! no threads, no HTTP client and no app configuration of its own: the plugin
+//! hands those in, so it fits however the plugin already does them.
 //!
 //! - [`cloud`]: the service as a plugin runs it (switch, row, debounced
 //!   uploads and restore as background tasks), over a small [`cloud::Host`]
-//!   trait the plugin implements with its `host`, `license` and `tasks`.
+//!   trait the plugin implements with `sicompass_sdk::plugin`'s `host` and
+//!   `license`, and a thread for each background task.
 //! - [`snapshot`]: a store directory as a snapshot, the path checks that keep a
 //!   restore inside it, and back to disk.
 //! - [`protocol`]: upload, download and restore, over the caller's `send`
-//!   (a plugin's `net::fetch`).
+//!   (the plugin's own HTTP client).
 //! - [`debounce`]: upload a while after the last change, driven by the
 //!   caller's clock.
 //! - [`row`]: which message the plugin's backup row shows for the standing the

@@ -5,10 +5,10 @@
 //! Filesystem providers move deleted items to the OS trash. To make a delete
 //! undoable even after the trash is emptied, they snapshot the target's content
 //! into an [`FsSideEffect`] first and replay it on undo. Nothing here touches
-//! the OS trash, so a WASM plugin uses it too: it trashes through its host's
-//! `desktop.trash`, keeps the snapshot in a `ProviderOp` payload
-//! ([`encode`] / [`decode`]), and restores with [`restore`], passing its
-//! `desktop.restore` for the oversized case. The app's own providers use
+//! the OS trash, so a plugin uses it too: it trashes through the app's
+//! `desktop::trash`, keeps the snapshot in a `ProviderOp` payload
+//! ([`encode`] / [`decode`]), and restores with [`restore`], passing
+//! `desktop::restore` for the oversized case. The app's own providers use
 //! [`crate::fs_trash`], which passes the `trash` crate's restore.
 
 use crate::timeline::{FsSideEffect, TrashedTree};

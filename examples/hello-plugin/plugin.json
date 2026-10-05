@@ -1,10 +1,9 @@
 {
   "name": "hello",
   "displayName": "hello",
-  "type": "wasm",
-  "entry": "plugin.wasm",
-  "version": "0.2.0",
-  "description": "hello-plugin-name",
+  "type": "process",
+  "entry": "plugin",
+  "version": "0.1.0",
   "settings": [
     { "type": "text", "label": "greetee", "key": "greetee", "default": "world" }
   ],

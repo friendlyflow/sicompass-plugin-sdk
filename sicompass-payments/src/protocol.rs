@@ -2,9 +2,8 @@
 //!
 //! `PUT <server>/plugins/<plugin>` uploads a [`Snapshot`], `GET` the same path
 //! downloads it, both with the user's redeem token as a bearer token. The
-//! caller supplies `send`: a sicompass plugin passes its host's `net::fetch`
-//! (the only network a sandboxed plugin has), a native program any client.
-//! So the same code serves the notes and board plugins, a third party's
+//! caller supplies `send`, over whichever HTTP client it already has. So the
+//! same code serves the notes and board plugins, a third party's
 //! plugin against its own server, and this crate's tests.
 //!
 //! It is a backup, not a sync. [`restore`] refuses to run over a store that

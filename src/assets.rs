@@ -32,16 +32,16 @@
 //! MSI components. Those five hand-maintained lists are what silently shipped
 //! release archives with no assets at all, once, for a long while.
 //!
-//! A WASM plugin cannot compile anything into the host binary, so the host
-//! registers a *resolver* for it instead, reading `<plugin_dir>/assets/<name>`
-//! under the same confinement as every other guest-supplied path. Same URI shape,
-//! same call site, different byte source.
+//! A plugin cannot compile anything into the app's binary, so the app registers
+//! a *resolver* for it instead, reading `<plugin_dir>/assets/<name>` and
+//! refusing a name that leaves that folder. Same URI shape, same call site,
+//! different byte source.
 
 // ---------------------------------------------------------------------------
 // Portable — the URI vocabulary
 // ---------------------------------------------------------------------------
 //
-// A guest builds with `default-features = false` and still has to *name* its
+// A plugin builds with `default-features = false` and still has to *name* its
 // assets, so the scheme lives on the portable side. Only the registry below is
 // host-only.
 
@@ -95,7 +95,7 @@ mod registry {
     struct Registry {
         /// Full URI -> compiled-in bytes. Built-in providers.
         bytes: HashMap<String, &'static [u8]>,
-        /// Provider id -> fallible byte source. WASM plugins.
+        /// Provider id -> fallible byte source. Plugins.
         resolvers: HashMap<String, AssetResolver>,
     }
 
@@ -121,7 +121,7 @@ mod registry {
         }
     }
 
-    /// Publish a byte source for a whole provider — how the host serves a WASM
+    /// Publish a byte source for a whole provider — how the host serves a
     /// plugin's `<plugin_dir>/assets/` directory. Replaces any previous resolver
     /// for `provider`.
     ///
@@ -164,7 +164,7 @@ mod registry {
     /// reported rather than showing up later as a silently missing image.
     ///
     /// Resolver-backed providers are absent by construction: a closure is not a
-    /// listing, so a WASM plugin's assets cannot be enumerated here.
+    /// listing, so a plugin's assets cannot be enumerated here.
     pub fn registered_uris() -> Vec<String> {
         let Ok(reg) = registry().read() else {
             return Vec::new();

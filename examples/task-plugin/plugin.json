@@ -1,7 +1,0 @@
-{
-  "name": "task",
-  "displayName": "task",
-  "type": "wasm",
-  "entry": "plugin.wasm",
-  "version": "0.2.0"
-}

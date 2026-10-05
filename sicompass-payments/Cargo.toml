@@ -1,5 +1,4 @@
-# Its own workspace root: a library, built for wasm32-wasip2 inside plugins and
-# natively for its tests.
+# Its own workspace root: a library the plugins that back up to a cloud link.
 [workspace]
 
 [package]

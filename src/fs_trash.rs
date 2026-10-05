@@ -1,6 +1,6 @@
 //! Shared OS-trash snapshot/restore helpers, for the app's own providers.
 //!
-//! The snapshot itself is [`crate::fs_snapshot`], which a WASM plugin uses too.
+//! The snapshot itself is [`crate::fs_snapshot`], which a plugin uses too.
 //! What is here is the half only the app process can do: pulling an item back
 //! out of the OS trash with the `trash` crate, for a delete too large to
 //! snapshot.

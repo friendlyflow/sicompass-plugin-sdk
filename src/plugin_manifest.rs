@@ -8,16 +8,12 @@
 
 use serde::{Deserialize, Serialize};
 
-/// How the plugin is executed.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+/// How the plugin is executed. `plugin.json` must say: a manifest without a
+/// `type` is a WASM plugin from before sicompass 0.3, when that was the
+/// default.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum PluginType {
-    /// Sandboxed WebAssembly component, and the only way to load third-party code.
-    ///
-    /// The default, so a manifest that omits `type` gets the sandbox rather than
-    /// having to ask for it.
-    #[default]
-    Wasm,
     /// A program of its own, which the app starts and talks to over its stdin
     /// and stdout ([`crate::plugin_ipc`]). `entry` names the executable without
     /// an extension: the app adds `.exe` on Windows, so one `plugin.json` serves
@@ -33,12 +29,11 @@ pub enum PluginType {
 
 /// Plugin types that used to exist, kept only to explain their absence.
 ///
-/// `native` loaded a `.so`/`.dll`/`.dylib` through `dlopen`, and `script` shelled
-/// out to `bun`. Both are gone: Apple forbids executing downloaded native code and
-/// equally forbids shipping a general-purpose interpreter, and a native in-process
-/// plugin had full process privileges, so `allowedHosts` and every other manifest
-/// policy was advisory against it. Neither could be made safe or shippable.
-pub const RETIRED_TYPES: &[&str] = &["native", "script"];
+/// `native` loaded a `.so`/`.dll`/`.dylib` into the app through `dlopen`, and
+/// `script` ran a `bun` script per operation. `wasm` was a sandboxed
+/// WebAssembly component, the only third-party plugin until sicompass 0.3. A
+/// plugin is a program now (`process`), so each of these needs a new release.
+pub const RETIRED_TYPES: &[&str] = &["native", "script", "wasm"];
 
 /// Kind of a per-plugin setting entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -73,7 +68,7 @@ pub struct PluginSetting {
 pub struct PluginManifest {
     pub name: String,
     pub display_name: String,
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type")]
     pub plugin_type: PluginType,
     /// Relative entry path (resolved relative to the manifest directory).
     pub entry: String,
@@ -186,18 +181,23 @@ fn default_hot_reload() -> bool {
     true
 }
 
-/// Parse a `plugin.json`. A retired plugin type (`native`, `script`) gets an error
-/// that says so, instead of serde's "unknown variant".
+/// Parse a `plugin.json`. A retired plugin type (`native`, `script`, `wasm`,
+/// or no `type` at all, which meant `wasm`) gets an error that says so,
+/// instead of serde's "unknown variant".
 pub fn parse_manifest(json: &str) -> Result<PluginManifest, String> {
     serde_json::from_str(json).map_err(|e| {
-        let retired = serde_json::from_str::<serde_json::Value>(json)
-            .ok()
-            .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_owned))
-            .filter(|t| RETIRED_TYPES.contains(&t.as_str()));
+        let value = serde_json::from_str::<serde_json::Value>(json).ok();
+        let retired = value.as_ref().and_then(|v| match v.get("type") {
+            None => Some("wasm".to_owned()),
+            Some(t) => t
+                .as_str()
+                .filter(|t| RETIRED_TYPES.contains(t))
+                .map(str::to_owned),
+        });
         match retired {
             Some(t) => format!(
-                "plugin type `{t}` is no longer supported: plugins are sandboxed \
-                 WebAssembly components (`\"type\": \"wasm\"`)"
+                "plugin type `{t}` is no longer supported: a plugin is a program \
+                 now (`\"type\": \"process\"`), so it needs a newer release, from the Store"
             ),
             None => e.to_string(),
         }
@@ -212,7 +212,7 @@ mod tests {
     fn permissions_parse_and_both_allowed_hosts_lists_merge() {
         let m = parse_manifest(
             r#"{
-                "name": "notes", "displayName": "notes", "entry": "plugin.wasm",
+                "name": "notes", "displayName": "notes", "type": "process", "entry": "plugin",
                 "allowedHosts": ["cloud.example.org"],
                 "permissions": {
                     "allowedHosts": ["Cloud.example.org", "api.example.org"],
@@ -237,20 +237,20 @@ mod tests {
     #[test]
     fn nothing_is_granted_by_default() {
         let m =
-            parse_manifest(r#"{ "name": "x", "displayName": "x", "entry": "p.wasm" }"#).unwrap();
+            parse_manifest(r#"{ "name": "x", "displayName": "x", "type": "process", "entry": "p" }"#).unwrap();
         assert_eq!(m.permissions, Permissions::default());
         assert!(m.allowed_hosts().is_empty());
-        assert_eq!(m.plugin_type, PluginType::Wasm);
+        assert_eq!(m.plugin_type, PluginType::Process);
         assert!(m.hot_reload);
     }
 
     #[test]
     fn rendering_pages_is_declared_and_off_by_default() {
         let plain =
-            parse_manifest(r#"{ "name": "x", "displayName": "x", "entry": "p.wasm" }"#).unwrap();
+            parse_manifest(r#"{ "name": "x", "displayName": "x", "type": "process", "entry": "p" }"#).unwrap();
         assert!(!plain.renders_pages);
         let browser = parse_manifest(
-            r#"{ "name": "x", "displayName": "x", "entry": "p.wasm", "rendersPages": true }"#,
+            r#"{ "name": "x", "displayName": "x", "type": "process", "entry": "p", "rendersPages": true }"#,
         )
         .unwrap();
         assert!(browser.renders_pages);
@@ -267,6 +267,18 @@ mod tests {
     }
 
     #[test]
+    fn a_wasm_manifest_with_or_without_its_type_is_explained() {
+        for json in [
+            r#"{ "name": "x", "displayName": "x", "type": "wasm", "entry": "plugin.wasm" }"#,
+            r#"{ "name": "x", "displayName": "x", "entry": "plugin.wasm" }"#,
+        ] {
+            let e = parse_manifest(json).unwrap_err();
+            assert!(e.contains("`wasm` is no longer supported"), "{e}");
+            assert!(e.contains("from the Store"), "{e}");
+        }
+    }
+
+    #[test]
     fn a_retired_type_is_explained() {
         let e = parse_manifest(
             r#"{ "name": "x", "displayName": "x", "entry": "x.so", "type": "native" }"#,
@@ -277,7 +289,7 @@ mod tests {
 
     #[test]
     fn a_manifest_round_trips_through_json() {
-        let json = r#"{ "name": "x", "displayName": "X", "entry": "plugin.wasm",
+        let json = r#"{ "name": "x", "displayName": "X", "type": "process", "entry": "plugin",
                         "version": "0.2.0", "permissions": { "storage": true } }"#;
         let m = parse_manifest(json).unwrap();
         let again = parse_manifest(&serde_json::to_string(&m).unwrap()).unwrap();

@@ -1,8 +1,8 @@
 # Copied from sicompass's .cargo/config.toml. Keep the XDG block: the `host`
 # feature's `platform` module resolves sicompass's config, state, data and cache
 # directories, so without it `cargo test` reads and writes the developer's real
-# sicompass directories. It also covers sicompass-pdk and examples/*, which are
-# their own workspace roots but sit below this directory.
+# sicompass directories. It also covers tools/* and examples/*, which are their
+# own workspace roots but sit below this directory.
 [build]
 
 [env]

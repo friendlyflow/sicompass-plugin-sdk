@@ -29,7 +29,8 @@ installs it.
 | Crate            | For                                         | Install                                 |
 | ---------------- | ------------------------------------------- | --------------------------------------- |
 | `sicompass-sdk`  | the data model, and writing a plugin        | `cargo add sicompass-sdk -F plugin`     |
-| `sicompass-pdk`  | WASM components, for Sicompass 0.2 (retired) | |
+
+(`sicompass-pdk`, the kit for the WASM plugins of Sicompass 0.2, is retired.)
 
 `sicompass-sdk` builds three ways. With default features it is the full
 host-side crate the app uses. With `default-features = false` it is the
@@ -89,8 +90,9 @@ sicompass_sdk::plugin::main!(Hello);
 `main!` makes it the program. Its stdout is the channel to Sicompass, so the
 runtime moves it aside before your code runs: `println!` lands in stderr, which
 is Sicompass's log for your plugin, and programs you start never see the
-channel. Every call from Sicompass has a 10 second deadline, so anything slower
-belongs on a thread of your own, reported through `Plugin::poll`.
+channel. Sicompass waits for every answer on its UI thread, so it does not draw
+while a call runs. Anything slower than a moment belongs on a thread of your
+own, reported through `Plugin::poll`.
 
 Build it, and install it where Sicompass looks, with a manifest beside it:
 
@@ -130,19 +132,17 @@ in `src/plugin_ipc`. Rust is the only supported language for now.
 ## Building from source
 
 ```bash
-nix develop                  # optional, brings the toolchain
-cargo test --all
-./scripts/verify-guest.sh    # builds examples/hello-plugin and audits its imports
+nix develop                               # optional, brings the toolchain
+cargo test --all --features plugin,package
 ```
 
-The dev shell's Rust comes from rust-overlay, not nixpkgs, because nixpkgs' rustc
-has no `std` for `wasm32-wasip2`, the target plugins are moving to.
+`examples/hello-plugin` is a complete small plugin to start from.
 
 ## Releasing
 
-Tags of the form `vX.Y.Z` trigger the release workflow, which verifies the WIT
-contract and that the guest half still builds for wasm, then publishes
-`sicompass-sdk` to crates.io.
+Tags of the form `vX.Y.Z` trigger the release workflow, which runs the tests and
+checks that the plugin half builds without the app's dependencies, then
+publishes `sicompass-sdk` to crates.io.
 
 **The workflow's crates.io token is currently invalid.** The publish step has
 failed with `403 Forbidden: authentication failed` on v0.1.6, v0.2.0 and v0.3.0;

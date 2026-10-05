@@ -1,16 +1,13 @@
 //! Following symlinks the way a plugin with the whole disk needs to.
 //!
-//! Inside the WASI sandbox, a symlink whose target is an *absolute* path is
-//! never followed, even when `/` itself is preopened: wasmtime's filesystem
-//! (cap-std) treats an absolute target as leaving the directory it was reached
-//! through. Relative targets are followed as usual. So for a plugin granted `/`
-//! (the file browser, the text editor), `/home/u/docs -> /data/docs` looks like
-//! a dangling link: not a directory, and nothing can be read through it.
+//! [`resolve`] walks a path the way the OS would and returns it with every
+//! symlink along it replaced by its target, absolute targets included.
 //!
-//! [`resolve`] walks a path the way the OS would and returns the one to use
-//! instead: every symlink along it replaced by its target, absolute targets
-//! included. With `/` granted, that path is reachable directly. Outside the
-//! sandbox it changes nothing a caller can observe.
+//! It was written for the WASI sandbox plugins ran in until sicompass 0.3,
+//! which never followed a link with an absolute target. A plugin is a program
+//! now and the OS follows links itself, so on a real filesystem it changes
+//! nothing a caller can observe. The file browser and the text editor still
+//! call it.
 
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};

@@ -1,7 +1,7 @@
 # Project Instructions
 
 This repo is the SDK every sicompass provider builds on, and the canonical
-definition of the WASM plugin interface. It holds five crates:
+definition of the plugin protocol. It holds four crates:
 
 - `sicompass-sdk` (the root): FFON, the `Provider` trait, tags, timeline, input,
   and behind the default `host` feature the parts only the app process uses
@@ -11,33 +11,30 @@ definition of the WASM plugin interface. It holds five crates:
   the `Plugin` trait, `main!`, and the plugin side of that protocol, which is
   what a plugin depends on (`default-features = false, features = ["plugin"]`).
   See `../sicompass/docs/process-plugins.md`.
-- `sicompass-pdk` (`sicompass-pdk/`): the WASM guest kit, retired. Plugins are
-  processes now (`sicompass_sdk::plugin`). It stays until the app no longer
-  runs WASM, then goes. On crates.io. Its own workspace root, because it only
-  builds for a WASM target.
 - `sicompass-payments` (`sicompass-payments/`): cloud backup for plugins that
   keep their data in their own folder (sicompass's notes and board plugins, and
   any third party's). Snapshots, the backup protocol over the caller's `send`
-  (a plugin's `net::fetch`), the debounce, and `cloud::Cloud`, the whole
-  service as a plugin runs it, over a small `Host` trait. Everything in it runs
-  inside a sandboxed plugin: no threads, no HTTP client of its own, no app
-  configuration. Its own workspace root, taken by git (not on crates.io).
-  Certificates, tiers, checkout and redeem are **not** here, on purpose: they
-  are the app's (sicompass's Store), and a plugin reaches them only through the
-  host's `license` interface. The paywall is on the service, never on the data.
-  Test it with `cargo test` and `cargo check --target wasm32-wasip2` in its
-  folder. Its `tests/live_server.rs` runs by hand against `../server`.
-- `examples/*`: guest plugins, also their own workspace roots. They double as
-  the fixtures sicompass tests its host against.
+  (the plugin's own HTTP client), the debounce, and `cloud::Cloud`, the whole
+  service as a plugin runs it, over a small `Host` trait. It brings no threads,
+  HTTP client or app configuration of its own. Its own workspace root, taken by
+  git (not on crates.io). Certificates, tiers, checkout and redeem are **not**
+  here, on purpose: they are the app's (sicompass's Store), and a plugin reaches
+  them only through `sicompass_sdk::plugin::license`. The paywall is on the
+  service, never on the data. Test it with `cargo test` in its folder. Its
+  `tests/live_server.rs` runs by hand against `../server`.
+- `examples/hello-plugin`: the smallest useful plugin, its own workspace root.
 - `tools/sicompass-plugin`: the release tool (keygen, pack, sign, verify), its
   own workspace root. It uses the SDK's `package` feature and `plugin_abi`, the
-  same code the Store runs, so a release that verifies here installs there. Its
-  tests need the examples built (`./scripts/verify-guest.sh`) first.
+  same code the Store runs, so a release that verifies here installs there.
 
-`src/plugin_abi.rs` (the ABI version, the WASI baseline, the host function
-tables, the import audit, the locale-prefix rule) and `src/plugin_manifest.rs`
-(`plugin.json`) are the single definition sicompass's host, the tool and the
-Store share. Change the ABI there, not in a copy.
+`src/plugin_ipc/` (the messages), `src/plugin_abi.rs` (the protocol version, the
+plugin targets, what the user approves, the locale-prefix rule) and
+`src/plugin_manifest.rs` (`plugin.json`) are the single definition sicompass's
+host, the plugins, the tool and the Store share. Change them there, not in a
+copy.
+
+Plugins were sandboxed WASM components until sicompass 0.3 (the `sicompass-pdk`
+crate and `wit/sicompass-plugin.wit`, both deleted, in git history).
 
 Work on it is usually driven from a sicompass checkout next to this one
 (`../sicompass`), whose `/commit-and-push`, `/release`, `/sync` and
@@ -49,15 +46,11 @@ permissions, the Store). The design is `../sicompass/docs/plugin-platform.md`.
 
 ## Environment (Nix)
 
-The toolchain comes from the flake dev shell in [flake.nix](flake.nix). Unlike the
-other sicompass repos, **Rust comes from rust-overlay, not nixpkgs**: nixpkgs'
-rustc ships `std` only for `wasm32-unknown-unknown`, and guests are moving to
-`wasm32-wasip2`. The shell's toolchain has both targets. `flake.lock` pins it.
+The toolchain comes from the flake dev shell in [flake.nix](flake.nix). Rust
+comes from rust-overlay, like the plugin repos' shells. `flake.lock` pins it.
 
 - **Check once per session**, then stick with the answer: `command -v cargo`.
   - Non-empty: the shell is inside `nix develop`, so run `cargo ...` directly.
-    Check it is *this* repo's shell: `rustc --print sysroot` should list
-    `lib/rustlib/wasm32-wasip2`. sicompass's shell has no wasip2 `std`.
   - Empty, or the wrong shell: prefix toolchain commands with `nix develop -c`.
 - `nix develop -c <cmd>` prints a `warning: Git tree ... is dirty` line on
   stderr first. That warning is noise, not a failure.
@@ -67,26 +60,23 @@ rustc ships `std` only for `wasm32-unknown-unknown`, and guests are moving to
   tree under `target/`. Keep it: the `host` feature's `platform` module would
   otherwise have tests use the real sicompass directories.
 
-## The WIT file is canonical
+## The protocol is canonical
 
-`wit/sicompass-plugin.wit` is the plugin ABI. sicompass keeps a vendored copy at
-`src/sicompass/wit/sicompass-plugin.wit`, and a test there fails unless the two
-are byte-identical. Any WIT change means:
+`src/plugin_ipc/` is the contract between the app and every plugin. Its
+`PROTOCOL_VERSION` (`src/plugin_abi.rs`) is `major.minor`, and the app and a
+plugin talk only when the majors match:
 
-- a breaking version bump of the SDK (and the `package` line in the WIT)
-- `tests/wit_contract.rs` updated in the same commit (it pins the exact import
-  and export sets, which is the capability set)
-- the examples rebuilt, and copied into sicompass's `tests/fixtures/wasm/`
-- the vendored copy in sicompass updated
-
-The import section of a built guest **is** its capability set. Anything that
-grants authority lives in its own interface so the host can leave it unlinked.
+- Adding a `Request` or `HostRequest` variant **at the end** is a minor bump: an
+  older peer answers it `Unsupported`.
+- Anything else (a field, a reordered variant, a changed record) is a major
+  bump, because postcard encodes by position. Every plugin then needs a new
+  release, and `PROCESS_ABI` changes with it.
+- `tests/plugin_process.rs` runs a real plugin process; keep it passing.
 
 ## Generated files and what is not committed
 
 - `Cargo.lock` is gitignored at every workspace root (a published library).
   `flake.lock` is committed.
-- Built `*.wasm` are gitignored here. sicompass commits its own fixture copies.
 
 ## Code Style
 
@@ -97,11 +87,12 @@ instead, or split into separate sentences.
 ## Testing
 
 - `cargo test --all --features plugin,package` at the root (the SDK, including
-  `wit_contract` and `tests/plugin_process.rs`, which runs a real plugin
-  process built from `tests/fixtures/stdio_plugin.rs`).
-- `cargo check --no-default-features --target wasm32-unknown-unknown`: the guest
-  surface of the SDK must not pull in host-only dependencies.
-- `./scripts/verify-guest.sh`: builds a guest and audits its imports.
+  `tests/plugin_process.rs`, which runs a real plugin process built from
+  `tests/fixtures/stdio_plugin.rs`).
+- `cargo check --no-default-features --features plugin`: the plugin half must
+  not pull in the app's dependencies.
+- `cargo test` in `tools/sicompass-plugin`, `sicompass-payments` and
+  `examples/hello-plugin`, each its own workspace root.
 - A change the app sees is also checked from `../sicompass` with
   `--config 'patch.crates-io.sicompass-sdk.path="../sicompass-plugin-sdk"'`,
   never by committing a `[patch]`.

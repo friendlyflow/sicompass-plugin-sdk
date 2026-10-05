@@ -13,7 +13,7 @@ own server.
 - `cloud` is the whole service as a plugin runs it: the settings switch, the
   backup row, uploads a few seconds after the last change and restores, both
   as background tasks. Your plugin implements a small `Host` trait (its clock,
-  `license`, `tasks` and translations) and forwards its saves, polls and task
+  `license`, a thread per task, and translations) and forwards its saves, polls and task
   events.
 - `snapshot` reads a plugin's folder into a snapshot and writes one back,
   checking every path so a restore can never write outside the folder.
@@ -31,7 +31,7 @@ own data whether or not they pay.
 
 ## Using it
 
-It lives in the SDK repo, next to `sicompass-pdk`. Add it to your plugin by git,
+It lives in the SDK repo. Add it to your plugin by git,
 pinned to a commit (or an SDK release tag):
 
 ```toml
@@ -40,7 +40,7 @@ sicompass-payments = { git = "https://github.com/friendlyflow/sicompass-plugin-s
 ```
 
 Your plugin learns where the user stands, and gets the token for your own
-service, from its host's `license` interface, so it never handles a
+service, from `sicompass_sdk::plugin::license`, so it never handles a
 certificate. The messages the user sees come from your plugin's own locales,
 under your prefix: `cloud::MESSAGES` lists the ids. The notes plugin
 (`notes-plugin-sicompass`) is a complete example.
@@ -50,9 +50,8 @@ under your prefix: `cloud::MESSAGES` lists the ids. The notes plugin
 From this folder, in the SDK repo's dev shell:
 
 ```bash
-nix develop                            # the toolchain, with wasm32-wasip2
+nix develop                            # the toolchain
 cargo test
-cargo check --target wasm32-wasip2     # the build plugins link
 ```
 
 ## Related repositories

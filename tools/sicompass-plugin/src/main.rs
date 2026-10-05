@@ -7,30 +7,24 @@
 //!
 //! ```text
 //! sicompass-plugin keygen --out ~/.config/sicompass/my-plugin.key
-//! cargo build --release --target wasm32-wasip2
-//! cp target/wasm32-wasip2/release/my_plugin.wasm plugin.wasm
-//! sicompass-plugin pack                 # dist/plugin.tar.gz + dist/release.json
+//! sicompass-plugin pack \
+//!     --bin aarch64-apple-darwin=build/aarch64-apple-darwin/plugin \
+//!     --bin x86_64-unknown-linux-musl=build/x86_64-unknown-linux-musl/plugin
+//! # dist/plugin-<target>.tar.gz for each, and one dist/release.json
 //! sicompass-plugin sign --key ~/.config/sicompass/my-plugin.key
 //! sicompass-plugin verify --pubkey <base64>
 //! ```
 //!
-//! A plugin process (`"type": "process"`) is packed from one build per
-//! platform, each named by its target triple:
-//!
-//! ```text
-//! sicompass-plugin pack \
-//!     --bin aarch64-apple-darwin=build/aarch64-apple-darwin/my-plugin \
-//!     --bin x86_64-unknown-linux-musl=build/x86_64-unknown-linux-musl/my-plugin
-//! # dist/plugin-<target>.tar.gz for each, and one dist/release.json
-//! ```
+//! A plugin is a program, built once per platform, each build named by its
+//! target triple.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use sicompass_sdk::package::{self, ARCHIVE_FILE, RELEASE_FILE, ReleaseInfo, SIGNATURE_FILE};
-use sicompass_sdk::plugin_abi::{self, ImportedInterface};
+use sicompass_sdk::package::{self, RELEASE_FILE, ReleaseInfo, SIGNATURE_FILE};
+use sicompass_sdk::plugin_abi;
 use sicompass_sdk::plugin_manifest::{PluginManifest, PluginType, parse_manifest};
 
 #[derive(Parser)]
@@ -53,15 +47,16 @@ enum Command {
         #[arg(long)]
         key: PathBuf,
     },
-    /// Check a built plugin directory and write its archives and release.json.
+    /// Check a plugin directory and its builds, and write their archives and
+    /// release.json.
     Pack {
-        /// The plugin directory: plugin.json, the component, assets/, locales/.
+        /// The plugin directory: plugin.json, assets/, locales/.
         #[arg(long, default_value = ".")]
         dir: PathBuf,
         #[arg(long, default_value = "dist")]
         out: PathBuf,
-        /// For a plugin process: `<target-triple>=<executable>`, once per
-        /// platform the release supports.
+        /// `<target-triple>=<executable>`, once per platform the release
+        /// supports.
         #[arg(long = "bin", value_name = "TARGET=PATH")]
         bins: Vec<String>,
     },
@@ -163,61 +158,6 @@ fn read(path: &Path) -> Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// The WIT-level imports and exports of a component.
-fn component_interfaces(wasm: &[u8]) -> Result<(Vec<ImportedInterface>, Vec<String>), String> {
-    let decoded = wit_component::decode(wasm).map_err(|e| format!("not a WASM component: {e}"))?;
-    let (resolve, world) = match &decoded {
-        wit_component::DecodedWasm::Component(r, w) => (r, *w),
-        wit_component::DecodedWasm::WitPackage(..) => {
-            return Err("this is a WIT package, not a component".to_owned());
-        }
-    };
-    let name_of = |item: &wit_parser::WorldItem| match item {
-        wit_parser::WorldItem::Interface { id, .. } => resolve.id_of(*id).map(|n| (n, *id)),
-        _ => None,
-    };
-    let mut imports = Vec::new();
-    for item in resolve.worlds[world].imports.values() {
-        if let Some((name, id)) = name_of(item) {
-            imports.push(ImportedInterface {
-                name,
-                functions: resolve.interfaces[id].functions.keys().cloned().collect(),
-            });
-        }
-    }
-    let exports = resolve.worlds[world]
-        .exports
-        .values()
-        .filter_map(|i| name_of(i).map(|(n, _)| n))
-        .collect();
-    Ok((imports, exports))
-}
-
-/// Every check the Store makes on a plugin's files, given its manifest and a
-/// way to read one of its files. A plugin process is a program, which has no
-/// import list to audit: only its locales are checked.
-fn check_plugin(
-    manifest: &PluginManifest,
-    read_file: &dyn Fn(&str) -> Result<Vec<u8>, String>,
-    locale_files: &[String],
-) -> Result<Vec<ImportedInterface>, String> {
-    let imports = if manifest.plugin_type == PluginType::Process {
-        Vec::new()
-    } else {
-        let wasm = read_file(&manifest.entry)?;
-        let (imports, exports) = component_interfaces(&wasm)?;
-        plugin_abi::audit_imports(
-            &imports,
-            &exports,
-            &manifest.permissions,
-            &manifest.allowed_hosts(),
-        )?;
-        imports
-    };
-    check_locales(manifest, read_file, locale_files)?;
-    Ok(imports)
-}
-
 fn check_locales(
     manifest: &PluginManifest,
     read_file: &dyn Fn(&str) -> Result<Vec<u8>, String>,
@@ -238,7 +178,8 @@ fn check_locales(
 /// Archives an earlier pack may have left in `out`, which would no longer
 /// match a new release.json.
 fn clear_archives(out: &Path) {
-    let _ = std::fs::remove_file(out.join(ARCHIVE_FILE));
+    // `plugin.tar.gz`: a WASM release, from before sicompass 0.3.
+    let _ = std::fs::remove_file(out.join("plugin.tar.gz"));
     if let Ok(entries) = std::fs::read_dir(out) {
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
@@ -255,44 +196,10 @@ fn pack(dir: &Path, out: &Path, bins: &[String]) -> Result<(), String> {
     let manifest_json = String::from_utf8(read(&dir.join("plugin.json"))?)
         .map_err(|_| "plugin.json is not UTF-8".to_owned())?;
     let manifest = parse_manifest(&manifest_json).map_err(|e| format!("plugin.json: {e}"))?;
-    if manifest.plugin_type == PluginType::Process {
-        return pack_process(dir, out, &manifest, bins);
+    if manifest.plugin_type != PluginType::Process {
+        return Err("plugin.json must say `\"type\": \"process\"`".to_owned());
     }
-    if !bins.is_empty() {
-        return Err("--bin is for a plugin process (`\"type\": \"process\"`)".to_owned());
-    }
-    let files = package::collect_files(dir, &manifest)?;
-    let locales: Vec<String> = files
-        .iter()
-        .filter(|f| f.starts_with("locales/"))
-        .cloned()
-        .collect();
-    let imports = check_plugin(&manifest, &|f| read(&dir.join(f)), &locales)?;
-
-    let archive = package::build_archive(dir, &files)?;
-    let info = ReleaseInfo::new(&manifest, &archive)?;
-    let mut json = serde_json::to_vec_pretty(&info).map_err(|e| e.to_string())?;
-    json.push(b'\n');
-
-    std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
-    clear_archives(out);
-    std::fs::write(out.join(ARCHIVE_FILE), &archive).map_err(|e| e.to_string())?;
-    std::fs::write(out.join(RELEASE_FILE), &json).map_err(|e| e.to_string())?;
-
-    println!("{} {} (ABI {})", info.name, info.version, info.abi);
-    for f in &files {
-        println!("  {f}");
-    }
-    println!("imports:");
-    for i in &imports {
-        println!("  {}", i.name);
-    }
-    println!(
-        "wrote {} and {}",
-        out.join(ARCHIVE_FILE).display(),
-        out.join(RELEASE_FILE).display()
-    );
-    Ok(())
+    pack_process(dir, out, &manifest, bins)
 }
 
 /// The triples sicompass runs plugin processes on, so a typo in `--bin` is
@@ -384,34 +291,27 @@ fn verify(pubkey: &str, dist: &Path) -> Result<(), String> {
     let sig = String::from_utf8(read(&dist.join(SIGNATURE_FILE))?)
         .map_err(|_| "release.json.sig is not text".to_owned())?;
     let info = package::verify_release_info(&release, &sig, pubkey)?;
-    if info.is_process() {
-        for target in info.targets.keys() {
-            let archive = read(&dist.join(package::archive_file(target)))?;
-            package::verify_release_for(&release, &sig, pubkey, Some(target), &archive)?;
-            verify_archive(&info, &archive, Some(target))?;
-        }
-        println!(
-            "{} {} verifies for {}: signature, archive hashes, manifest, executables, locales",
-            info.name,
-            info.version,
-            info.targets.keys().cloned().collect::<Vec<_>>().join(", ")
-        );
-        return Ok(());
+    if !info.is_process() {
+        // `archive_for` says why.
+        info.archive_for(None)?;
     }
-    let archive = read(&dist.join(ARCHIVE_FILE))?;
-    let info = package::verify_release_for(&release, &sig, pubkey, None, &archive)?;
-    verify_archive(&info, &archive, None)?;
+    for target in info.targets.keys() {
+        let archive = read(&dist.join(package::archive_file(target)))?;
+        package::verify_release_for(&release, &sig, pubkey, Some(target), &archive)?;
+        verify_archive(&info, &archive, target)?;
+    }
     println!(
-        "{} {} verifies: signature, archive hash, manifest, imports, locales",
-        info.name, info.version
+        "{} {} verifies for {}: signature, archive hashes, manifest, executables, locales",
+        info.name,
+        info.version,
+        info.targets.keys().cloned().collect::<Vec<_>>().join(", ")
     );
     Ok(())
 }
 
 /// What is inside one verified archive: a manifest that agrees with
-/// release.json, the component's imports or the target's executable, and the
-/// locales.
-fn verify_archive(info: &ReleaseInfo, archive: &[u8], target: Option<&str>) -> Result<(), String> {
+/// release.json, the target's executable, and the locales.
+fn verify_archive(info: &ReleaseInfo, archive: &[u8], target: &str) -> Result<(), String> {
     let files = package::read_archive(archive)?;
     let get = |name: &str| {
         files
@@ -430,12 +330,10 @@ fn verify_archive(info: &ReleaseInfo, archive: &[u8], target: Option<&str>) -> R
         .map(|(p, _)| p.clone())
         .filter(|p| p.starts_with("locales/") && p.ends_with(".ftl"))
         .collect();
-    check_plugin(&manifest, &|f| get(f), &locales)?;
-    if let Some(target) = target {
-        let exe = plugin_abi::executable_name(&manifest.entry, target);
-        if get(&exe)?.is_empty() {
-            return Err(format!("{exe} for {target} is empty"));
-        }
+    check_locales(&manifest, &|f| get(f), &locales)?;
+    let exe = plugin_abi::executable_name(&manifest.entry, target);
+    if get(&exe)?.is_empty() {
+        return Err(format!("{exe} for {target} is empty"));
     }
     Ok(())
 }

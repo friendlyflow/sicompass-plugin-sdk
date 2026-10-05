@@ -36,9 +36,10 @@
 //! - **Your own folder** is [`storage_dir`] (with `"storage": true` in
 //!   `plugin.json`), and your shipped files are under [`plugin_dir`]
 //!   (`assets/`, read with [`read_asset`]).
-//! - **Every call has a deadline.** The app calls you on its UI thread and gives
-//!   up on a call after 10 seconds, ending the process. Anything slower belongs on
-//!   a thread of your own, reported through [`Plugin::poll`].
+//! - **The app waits for every answer.** It calls you on its UI thread, so
+//!   while a call runs the app does not draw or take keys. Anything slower
+//!   than a moment belongs on a thread of your own, reported through
+//!   [`Plugin::poll`].
 
 mod types_reexport {
     pub use crate::plugin_ipc::{

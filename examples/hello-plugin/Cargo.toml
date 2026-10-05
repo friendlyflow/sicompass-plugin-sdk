@@ -1,4 +1,4 @@
-# Independent workspace: only ever built for wasm32-wasip2.
+# Its own workspace root: an example plugin, the program sicompass starts.
 [workspace]
 
 [package]
@@ -8,15 +8,9 @@ edition = "2024"
 license = "GPL-3.0-only"
 publish = false
 
-[lib]
-crate-type = ["cdylib"]
+[[bin]]
+name = "hello-plugin"
+path = "src/main.rs"
 
 [dependencies]
-sicompass-pdk = { path = "../../sicompass-pdk" }
-
-[profile.release]
-# Guests ship as bytecode, and App Store builds interpret rather than JIT them, so
-# a small module matters more than aggressive inlining.
-opt-level = "s"
-lto = true
-strip = true
+sicompass-sdk = { path = "../..", default-features = false, features = ["plugin"] }

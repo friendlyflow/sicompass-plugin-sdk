@@ -121,13 +121,13 @@ mod tests {
         plugin(
             root.path(),
             "zeta",
-            r#"{"name":"zeta","displayName":"Zeta","entry":"plugin.wasm"}"#,
+            r#"{"name":"zeta","displayName":"Zeta","type":"process","entry":"plugin"}"#,
             None,
         );
         plugin(
             root.path(),
             "alpha",
-            r#"{"name":"alpha","displayName":"Alpha","entry":"plugin.wasm"}"#,
+            r#"{"name":"alpha","displayName":"Alpha","type":"process","entry":"plugin"}"#,
             None,
         );
         plugin(root.path(), "broken", "{ not json", None);

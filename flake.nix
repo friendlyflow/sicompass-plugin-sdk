@@ -1,5 +1,5 @@
 {
-  description = "sicompass-plugin-sdk: the Provider SDK, the WIT plugin interface and the WASM guest kit";
+  description = "sicompass-plugin-sdk: the Provider SDK and the plugin kit";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -9,10 +9,8 @@
     # 2026). Retire this input, and the system below, when that runs out.
     nixpkgs-x86-darwin.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
 
-    # The Rust toolchain, including the guest targets. nixpkgs' rustc ships
-    # `std` for `wasm32-unknown-unknown` only (neither wasip1 nor wasip2 has
-    # one there), and WASM plugins are moving to `wasm32-wasip2`. rust-overlay
-    # provides an upstream toolchain with any set of targets; flake.lock pins
+    # The Rust toolchain. rust-overlay provides an upstream toolchain with any
+    # set of targets (a plugin's static musl build among them); flake.lock pins
     # which one, so it moves only on `nix flake update`.
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -44,23 +42,14 @@
         let
           pkgs = nixpkgsFor.${system};
 
-          # One toolchain for the host-side SDK and for guests. The SDK and its
-          # tests build for the host target; `sicompass-pdk` and `examples/*`
-          # build for a WASM target:
-          #   wasm32-unknown-unknown  today's guests (WIT 0.1, no WASI)
-          #   wasm32-wasip2           guests from WIT 0.2 on (plugin-platform.md)
-          # rust-lld ships with this toolchain, so no separate lld is needed.
           rustToolchain = pkgs.rust-bin.stable.latest.default.override {
             extensions = [ "rust-src" "rust-analyzer" "clippy" "rustfmt" ];
-            targets = [ "wasm32-unknown-unknown" "wasm32-wasip2" ];
           };
         in
         {
           default = pkgs.mkShell {
             buildInputs = with pkgs; [
               rustToolchain
-              # Componentizing and auditing guests (scripts/verify-guest.sh).
-              wasm-tools
               # graphify, the code-graph CLI, is a uv-installed Python tool.
               uv
             ];
