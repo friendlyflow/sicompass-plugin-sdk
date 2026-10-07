@@ -227,8 +227,8 @@ pub trait Provider: Send + 'static {
     fn add_settings_section(&mut self, _name: &str) {}
 
     /// Register a priority section (rendered first in the settings list).
-    /// Used to set up the "Available programs:" section without a direct
-    /// dependency on `SettingsProvider`. Default: no-op.
+    /// The app no longer uses one (it was the "Available programs:" section).
+    /// Default: no-op.
     fn add_priority_section(&mut self, _name: &str) {}
 
     /// Set the apply callback — called whenever a setting changes.
@@ -245,7 +245,7 @@ pub trait Provider: Send + 'static {
     fn remove_settings_section(&mut self, _name: &str) {}
 
     /// Remove one checkbox entry, e.g. an uninstalled program's line in
-    /// "Available programs:". Only the settings provider implements it.
+    /// "Available programs:" in older apps. Default: no-op.
     fn remove_checkbox_setting(&mut self, _section: &str, _config_key: &str) {}
 
     /// Attach a version string to a named section. The settings provider

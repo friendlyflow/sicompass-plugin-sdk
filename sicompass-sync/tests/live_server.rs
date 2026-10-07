@@ -1,4 +1,4 @@
-//! End-to-end checks of the backup protocol against a real server.
+//! End-to-end checks of the sync protocol against a real server.
 //!
 //! Ignored by default: they need a server running, which `cargo test` must not
 //! depend on. Run them by hand after changing either side of the wire. The
@@ -21,10 +21,12 @@
 //!
 //! A plugin sends through its `net` interface; here `send` is a blocking
 //! reqwest client, which is what that interface does on the host side. The
-//! restore writes to a tempdir.
+//! syncs write to tempdirs.
 
-use sicompass_payments::protocol::{self, Request, Response};
-use sicompass_payments::snapshot::Snapshot;
+use sicompass_sync::cloud::Service;
+use sicompass_sync::protocol::{self, PutIf, Request, Response};
+use sicompass_sync::snapshot::{Snapshot, canonical, read_store, replace_store};
+use sicompass_sync::sync::{self, Base, Outcome};
 use std::collections::BTreeMap;
 
 fn server() -> String {
@@ -88,29 +90,98 @@ fn a_store_round_trips_through_the_server() {
     );
 }
 
+/// The head names what the server holds without its files, and an upload on
+/// a stale base is refused with the server's head.
 #[test]
 #[ignore = "needs a running license server"]
-fn a_restore_rebuilds_the_store_on_disk() {
-    let snapshot = Snapshot::new("kanban", files());
-    protocol::put_snapshot(&send, &server(), &token(), &snapshot).expect("upload failed");
+fn head_and_conditional_put() {
+    let token = issue("cloud-yearly", 365 * 86_400);
+    let head = protocol::get_head(&send, &server(), &token, "notes").expect("head failed");
+    assert_eq!(head.hash, None, "a fresh license holds nothing");
+    assert!(head.now > 0);
 
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("projectmanagement");
+    let first = canonical(&Snapshot::new("notes", files()));
+    let stored = protocol::put_snapshot_if(&send, &server(), &token, &first, "").expect("upload");
     assert!(
-        protocol::restore(&send, &server(), &token(), &root, "kanban").expect("restore failed")
+        matches!(stored, PutIf::Stored { stored: true, .. }),
+        "{stored:?}"
     );
+    let head = protocol::get_head(&send, &server(), &token, "notes").expect("head failed");
+    assert_eq!(head.hash.as_deref(), Some(first.hash.as_str()));
 
+    // Another upload on the empty base is out of date now.
+    let mut other = files();
+    other.insert("0002".to_owned(), "Ideas".to_owned());
+    let other = canonical(&Snapshot::new("notes", other));
+    let conflict = protocol::put_snapshot_if(&send, &server(), &token, &other, "").expect("409");
     assert_eq!(
-        std::fs::read_to_string(root.join("0001")).unwrap(),
-        "Groceries"
+        conflict,
+        PutIf::Conflict {
+            hash: Some(first.hash.clone()),
+            updated_at: head.updated_at
+        }
     );
-    assert_eq!(
-        std::fs::read_to_string(root.join("0001.d/0001")).unwrap(),
-        "milk"
-    );
+}
 
-    // And a second restore refuses, because the store is no longer empty.
-    assert!(protocol::restore(&send, &server(), &token(), &root, "kanban").is_err());
+/// Two machines with one license: each one's edit reaches the other.
+#[test]
+#[ignore = "needs a running license server"]
+fn two_machines_converge() {
+    let token = issue("cloud-yearly", 365 * 86_400);
+    let service = Service {
+        tier: "friendlyflow/cloud",
+        server: Box::leak(server().into_boxed_str()),
+        store: "kanban",
+        enable_key: "kanbanCloudBackup",
+        prefix: "projectmanagement",
+    };
+    let now = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
+    };
+    let run = |root: &std::path::Path| {
+        let outcome = sync::sync(&service, root, Some(token.clone()), &send, now()).expect("sync");
+        if let Outcome::Apply {
+            files,
+            hash,
+            updated_at,
+            ..
+        } = outcome.clone()
+        {
+            replace_store(root, &Snapshot::new("kanban", files.clone())).unwrap();
+            Base {
+                hash,
+                updated_at,
+                files,
+            }
+            .save(root)
+            .unwrap();
+        }
+        outcome
+    };
+
+    let one = tempfile::tempdir().unwrap();
+    let two = tempfile::tempdir().unwrap();
+    replace_store(one.path(), &Snapshot::new("kanban", files())).unwrap();
+    assert_eq!(run(one.path()), Outcome::Pushed);
+    assert!(matches!(run(two.path()), Outcome::Apply { .. }));
+
+    // One renames the column, the other adds a card.
+    std::fs::write(one.path().join("0001"), "Shopping").unwrap();
+    std::fs::write(two.path().join("0001.d/0002"), "eggs").unwrap();
+    assert_eq!(run(one.path()), Outcome::Pushed);
+    assert!(matches!(run(two.path()), Outcome::Apply { .. }));
+    assert!(matches!(run(one.path()), Outcome::Apply { .. }));
+
+    let a = read_store(one.path(), "kanban").unwrap();
+    let b = read_store(two.path(), "kanban").unwrap();
+    assert_eq!(a.files, b.files);
+    assert_eq!(a.files["0001"], "Shopping");
+    assert_eq!(a.files["0001.d/0002"], "eggs");
+    assert_eq!(run(one.path()), Outcome::UpToDate);
+    assert_eq!(run(two.path()), Outcome::UpToDate);
 }
 
 /// A token the server does not know must be refused in words the user can act

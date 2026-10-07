@@ -1,33 +1,39 @@
-# sicompass-payments
+# sicompass-sync
 
-*Cloud backup for Sicompass plugins.*
+*Cloud sync for Sicompass plugins.*
 
 This library is part of [Sicompass](https://github.com/friendlyflow/sicompass), a
 keyboard-first, accessibility-first way to use your entire computer.
 
-It is the client half of a paid backup service, for Sicompass plugins that keep
+It is the client half of a paid sync service, for Sicompass plugins that keep
 their data in their own folder. The Sicompass notes and board plugins use it to
-back up to Sicompass Cloud, and a plugin of your own can use it against your
+sync with Sicompass Cloud, and a plugin of your own can use it against your
 own server.
 
 - `cloud` is the whole service as a plugin runs it: the settings switch, the
-  backup row, uploads a few seconds after the last change and restores, both
-  as background tasks. Your plugin implements a small `Host` trait (its clock,
-  `license`, a thread per task, and translations) and forwards its saves, polls and task
-  events.
+  sync row, and a sync a few seconds after the last change, every minute and
+  on demand, as background tasks. Your plugin implements a small `Host` trait
+  (its clock, `license`, a thread per task, and translations) and forwards its
+  saves, polls and task events.
+- `merkle` is the store's Merkle tree. Every object has a hash, so two copies
+  of a store can tell which objects differ without comparing their contents.
+  The server computes the same hashes. It also has the three-way merge a sync
+  runs when two machines both changed the store.
+- `sync` is one sync: push what changed here, pull what changed elsewhere, and
+  merge when both did, against the copy both sides last agreed on.
 - `snapshot` reads a plugin's folder into a snapshot and writes one back,
-  checking every path so a restore can never write outside the folder.
-- `protocol` uploads, downloads and restores, over the HTTP your plugin has
-  (its `net::fetch`).
-- `debounce` uploads a while after the last change, not on every keystroke.
-- `row` says which message your backup row shows, from where the user stands
+  checking every path so a sync can never write outside the folder.
+- `protocol` asks the server what it holds, downloads it, and uploads only if
+  no other machine got there first, over the HTTP your plugin has.
+- `debounce` syncs a while after the last change, not on every keystroke.
+- `row` says which message your sync row shows, from where the user stands
   with your tier.
 - `usage` reads the storage and traffic the server reports.
 
-A restore never runs over a folder that already has files in it. A backup is
-not a sync, and the machine in front of the user wins. And the paywall is on
-the service, never on the data: a plugin using this shows and saves the user's
-own data whether or not they pay.
+A merge never loses an edit. A field both machines changed goes to the one that
+changed last, and an object deleted on one machine and edited on the other is
+kept. And the paywall is on the service, never on the data: a plugin using this
+shows and saves the user's own data whether or not they pay.
 
 ## Using it
 
@@ -36,7 +42,7 @@ pinned to a commit (or an SDK release tag):
 
 ```toml
 [dependencies]
-sicompass-payments = { git = "https://github.com/friendlyflow/sicompass-plugin-sdk", rev = "<commit>" }
+sicompass-sync = { git = "https://github.com/friendlyflow/sicompass-plugin-sdk", rev = "<commit>" }
 ```
 
 Your plugin learns where the user stands, and gets the token for your own
@@ -60,7 +66,7 @@ cargo test
 - [notes-plugin-sicompass](https://github.com/friendlyflow/notes-plugin-sicompass)
   and
   [projectmanagement-plugin-sicompass](https://github.com/friendlyflow/projectmanagement-plugin-sicompass),
-  which back up with it
+  which sync with it
 
 ## Community
 

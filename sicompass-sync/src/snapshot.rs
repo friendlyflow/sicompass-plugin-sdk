@@ -1,16 +1,15 @@
 //! A provider's store directory as a snapshot, and back.
 //!
-//! The snapshot is the directory verbatim: relative path to file contents,
-//! exactly the bytes the provider wrote locally. Nothing is re-encoded, so
-//! there is no second format to keep in step with `lib_notes::store` and
-//! `lib_project_management::store` as they change, and a restore is a plain
-//! file-for-file write.
+//! The snapshot is the directory as files: relative path to file contents.
+//! What a sync uploads is the store's [`canonical`] form, the same files with
+//! every Merkle hash recomputed ([`crate::merkle::to_files`]), which is
+//! byte for byte what the notes and board plugins write themselves.
 //!
-//! It is a backup, not a sync. One snapshot per plugin, newest upload wins, and
-//! the server never merges. That is also why `protocol::restore` refuses to run over a
-//! store that already has files in it: the machine in front of the user is the
-//! authority on their notes, and the server's copy is only ever a fallback for
-//! a machine that has lost them.
+//! [`Snapshot::hash`] is a flat hash over every file, `.listmeta` included, so
+//! it changes with anything in the store, the fields the Merkle hashes leave
+//! out (visibility, the archive flag, ids) as well. It is the store's identity
+//! on the server: the sync compares it to know *whether* two copies differ,
+//! and the Merkle tree to know *which objects* do.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -55,6 +54,16 @@ impl Snapshot {
             .map(|(k, v)| k.len() + v.len() + 8)
             .sum::<usize>()
     }
+}
+
+/// The store with every Merkle hash recomputed and its positions numbered
+/// densely: what a plugin would have written, whatever wrote it (an older
+/// version without hashes, the Trello script, a hand edit).
+pub fn canonical(snapshot: &Snapshot) -> Snapshot {
+    Snapshot::new(
+        &snapshot.plugin,
+        crate::merkle::to_files(&crate::merkle::parse(&snapshot.files)),
+    )
 }
 
 /// Hash a file map. Length-prefixed rather than concatenated, so that two
@@ -163,20 +172,55 @@ fn collect(root: &Path, dir: &Path, out: &mut BTreeMap<String, String>) -> Resul
     Ok(())
 }
 
-/// Write a snapshot into `root`, creating it if needed.
+/// Make the store at `root` hold exactly `snapshot`, creating it if needed.
 ///
 /// Every path is checked before anything is written, so a snapshot with one
-/// bad entry writes nothing at all rather than half a store.
-pub fn write_store(root: &Path, snapshot: &Snapshot) -> Result<(), String> {
+/// bad entry writes nothing at all rather than half a store. Only files whose
+/// contents differ are written, so an untouched note keeps its mtime. Store
+/// entries the snapshot does not have are removed; anything else in the
+/// folder (a README the user dropped in, the sync's own base file) is left
+/// alone, as the plugins' own saves leave it.
+pub fn replace_store(root: &Path, snapshot: &Snapshot) -> Result<(), String> {
     if let Some(bad) = snapshot.files.keys().find(|p| !is_safe_store_path(p)) {
         return Err(format!("refusing a backup with an unsafe path: {bad}"));
     }
     for (relative, contents) in &snapshot.files {
         let path = join_relative(root, relative)?;
+        if std::fs::read_to_string(&path).is_ok_and(|now| now == *contents) {
+            continue;
+        }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
         }
         std::fs::write(&path, contents).map_err(|e| format!("{}: {e}", path.display()))?;
+    }
+    prune(root, "", snapshot)
+}
+
+/// Remove the store entries under `dir` (`relative`, with a trailing `/` when
+/// not the top) that `snapshot` does not have.
+fn prune(dir: &Path, relative: &str, snapshot: &Snapshot) -> Result<(), String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(());
+    };
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("{}: {e}", dir.display()))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let path = entry.path();
+        let rel = format!("{relative}{name}");
+        if path.is_dir() {
+            if !is_safe_store_path(&format!("{rel}/.listmeta")) {
+                continue;
+            }
+            let prefix = format!("{rel}/");
+            if snapshot.files.keys().any(|k| k.starts_with(&prefix)) {
+                prune(&path, &prefix, snapshot)?;
+            } else {
+                std::fs::remove_dir_all(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            }
+        } else if is_safe_store_path(&rel) && !snapshot.files.contains_key(&rel) {
+            std::fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
     }
     Ok(())
 }
@@ -260,7 +304,7 @@ mod tests {
                 ("../victim".to_owned(), "pwned".to_owned()),
             ]),
         );
-        assert!(write_store(&root, &snapshot).is_err());
+        assert!(replace_store(&root, &snapshot).is_err());
         assert_eq!(std::fs::read_to_string(&outside).unwrap(), "original");
         // Not even the legal entry landed: it is all or nothing.
         assert!(!root.join("0001").exists());
@@ -317,7 +361,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("notes");
         let original = Snapshot::new("notes", files());
-        write_store(&root, &original).unwrap();
+        replace_store(&root, &original).unwrap();
 
         let read_back = read_store(&root, "notes").unwrap();
         assert_eq!(read_back.files, original.files);
@@ -344,5 +388,78 @@ mod tests {
         let snapshot = read_store(root, "notes").unwrap();
         assert_eq!(snapshot.files.len(), 1);
         assert!(snapshot.files.contains_key("0001"));
+    }
+
+    // ---- replacing a store ------------------------------------------------
+
+    #[test]
+    fn replacing_removes_what_is_gone_and_keeps_what_is_not_ours() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        replace_store(root, &Snapshot::new("notes", files())).unwrap();
+        std::fs::write(root.join("README.txt"), "mine").unwrap();
+        std::fs::write(root.join(".cloud-base.json"), "{}").unwrap();
+        std::fs::write(root.join("0001.d/notes.txt"), "mine too").unwrap();
+
+        let mut fewer = files();
+        fewer.remove("0001.d/0001");
+        fewer.insert("0002".to_owned(), "Ideas".to_owned());
+        replace_store(root, &Snapshot::new("notes", fewer.clone())).unwrap();
+        assert_eq!(read_store(root, "notes").unwrap().files, fewer);
+        assert!(root.join("README.txt").exists());
+        assert!(root.join(".cloud-base.json").exists());
+        assert!(root.join("0001.d/notes.txt").exists());
+
+        // A branch that became a leaf loses its folder.
+        let mut leaf = fewer.clone();
+        leaf.retain(|k, _| !k.starts_with("0001.d/"));
+        replace_store(root, &Snapshot::new("notes", leaf.clone())).unwrap();
+        assert!(!root.join("0001.d").exists());
+        assert_eq!(read_store(root, "notes").unwrap().files, leaf);
+    }
+
+    #[test]
+    fn replacing_leaves_an_unchanged_file_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        replace_store(root, &Snapshot::new("notes", files())).unwrap();
+        let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        let f = std::fs::File::options()
+            .write(true)
+            .open(root.join("0001"))
+            .unwrap();
+        f.set_modified(old).unwrap();
+        drop(f);
+
+        let mut edited = files();
+        edited.insert("0001.d/0001".to_owned(), "oat milk".to_owned());
+        replace_store(root, &Snapshot::new("notes", edited)).unwrap();
+        let mtime = std::fs::metadata(root.join("0001"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(mtime, old);
+    }
+
+    #[test]
+    fn the_canonical_form_carries_the_merkle_hashes() {
+        let legacy = Snapshot::new(
+            "kanban",
+            BTreeMap::from([
+                (
+                    ".listmeta".to_owned(),
+                    r#"{"children":[{"n":1,"id":1}]}"#.to_owned(),
+                ),
+                ("0001".to_owned(), "To do".to_owned()),
+                (
+                    "0001.d/.listmeta".to_owned(),
+                    r#"{"children":[]}"#.to_owned(),
+                ),
+            ]),
+        );
+        let c = canonical(&legacy);
+        assert_ne!(c.hash, legacy.hash);
+        assert_eq!(crate::merkle::verify(&c.files), crate::merkle::Verified::Ok);
+        assert_eq!(canonical(&c), c, "canonical is a fixed point");
     }
 }

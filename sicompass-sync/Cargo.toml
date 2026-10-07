@@ -1,12 +1,12 @@
-# Its own workspace root: a library the plugins that back up to a cloud link.
+# Its own workspace root: a library the plugins that sync with a cloud link.
 [workspace]
 
 [package]
-name = "sicompass-payments"
-version = "0.2.0"
+name = "sicompass-sync"
+version = "0.3.0"
 edition = "2024"
 license = "GPL-3.0-only"
-description = "Cloud backup for sicompass plugins: store snapshots, the backup protocol over the plugin's net, debouncing and the backup row"
+description = "Cloud sync for sicompass plugins: the store's Merkle tree, a three-way merge, the sync protocol over the plugin's net, debouncing and the sync row"
 repository = "https://github.com/friendlyflow/sicompass-plugin-sdk"
 # Plugins take it by git from the SDK repo (cargo finds it by name), pinned
 # to a rev or an SDK release tag. Not on crates.io (yet).
@@ -15,7 +15,8 @@ publish = false
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# Hashes a store snapshot so an unchanged store uploads nothing.
+# The Merkle hashes of a store, and the snapshot hash that lets an unchanged
+# store upload nothing.
 sha2 = "0.11"
 
 [dev-dependencies]

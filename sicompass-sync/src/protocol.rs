@@ -1,19 +1,20 @@
-//! The backup server's protocol, over whatever HTTP the caller has.
+//! The sync server's protocol, over whatever HTTP the caller has.
 //!
-//! `PUT <server>/plugins/<plugin>` uploads a [`Snapshot`], `GET` the same path
-//! downloads it, both with the user's redeem token as a bearer token. The
-//! caller supplies `send`, over whichever HTTP client it already has. So the
-//! same code serves the notes and board plugins, a third party's
-//! plugin against its own server, and this crate's tests.
+//! - `GET <server>/plugins/<plugin>/head`: the stored snapshot's hash and when
+//!   it was stored, without its files ([`get_head`]). What a sync polls.
+//! - `GET <server>/plugins/<plugin>`: the stored snapshot ([`get_snapshot`]).
+//! - `PUT <server>/plugins/<plugin>`: store a [`Snapshot`]. With a `base`
+//!   ([`put_snapshot_if`]), only if the server still holds that hash: a 409
+//!   says another machine got there first, and this one must merge.
 //!
-//! It is a backup, not a sync. [`restore`] refuses to run over a store that
-//! already has files in it: the machine in front of the user wins.
+//! All with the user's redeem token as a bearer token. The caller supplies
+//! `send`, over whichever HTTP client it already has. So the same code serves
+//! the notes and board plugins, a third party's plugin against its own server,
+//! and this crate's tests.
 
-use std::collections::BTreeMap;
-use std::path::Path;
-
-use crate::snapshot::{MAX_SNAPSHOT_BYTES, Snapshot, read_store, write_store};
+use crate::snapshot::{MAX_SNAPSHOT_BYTES, Snapshot};
 use crate::usage::Usage;
+use std::collections::BTreeMap;
 
 /// One HTTP request, for the caller's `send`.
 #[derive(Debug, Clone, PartialEq)]
@@ -34,10 +35,6 @@ pub struct Response {
 /// The caller's HTTP: send a request, return the reply or why there is none.
 pub type Send<'a> = &'a dyn Fn(&Request) -> Result<Response, String>;
 
-/// The message [`restore`] refuses with when the local store is not empty. A
-/// plugin can match it to say so in the user's language.
-pub const RESTORE_REFUSED: &str = "The local store is not empty, so nothing was restored";
-
 /// What an upload did.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Uploaded {
@@ -45,6 +42,36 @@ pub struct Uploaded {
     pub stored: bool,
     /// The user's usage, which every reply carries.
     pub usage: Option<Usage>,
+}
+
+/// What the server holds for a plugin, without the files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Head {
+    /// The stored snapshot's hash, `None` before the first upload.
+    pub hash: Option<String>,
+    /// When the server stored it (Unix seconds, the server's clock): the
+    /// plugin's last change on the server.
+    pub updated_at: Option<i64>,
+    /// The server's clock when it answered, so a client can compare
+    /// `updated_at` with its own times whatever its clock says.
+    pub now: i64,
+}
+
+/// What a conditional upload did.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PutIf {
+    /// Stored, or already held (`stored: false`).
+    Stored {
+        stored: bool,
+        updated_at: Option<i64>,
+        usage: Option<Usage>,
+    },
+    /// The server holds another hash than the `base` given: this machine is
+    /// out of date, and must merge what the server has first.
+    Conflict {
+        hash: Option<String>,
+        updated_at: Option<i64>,
+    },
 }
 
 fn endpoint(server: &str, plugin: &str) -> String {
@@ -166,30 +193,94 @@ pub fn get_snapshot(
     }))
 }
 
-/// Pull the server's copy over an **empty** store.
+/// What the server holds for `plugin`, without downloading it.
 ///
-/// Refuses with [`RESTORE_REFUSED`] when `root` already holds store files.
-/// Restoring over live data would be a sync decision, and a backup is not
-/// entitled to make one. `Ok(false)` means there was nothing to restore.
-pub fn restore(
+/// A server from before sync answers 404 or 405 here, which is said in words:
+/// syncing needs the server updated, and the plugin should not guess.
+pub fn get_head(send: Send, server: &str, token: &str, plugin: &str) -> Result<Head, String> {
+    check_config(server, token)?;
+    let response = send(&Request {
+        method: "GET",
+        url: format!("{}/head", endpoint(server, plugin)),
+        headers: headers(token),
+        body: None,
+    })
+    .map_err(|e| format!("Could not reach the server: {e}"))?;
+    if matches!(response.status, 404 | 405) {
+        return Err("The server does not offer sync yet".to_owned());
+    }
+    if !success(response.status) {
+        return Err(refusal(response.status, &response.body));
+    }
+    let value: serde_json::Value = serde_json::from_slice(&response.body)
+        .map_err(|e| format!("Server returned an invalid reply: {e}"))?;
+    Ok(Head {
+        hash: value
+            .get("hash")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
+        updated_at: value.get("updated_at").and_then(serde_json::Value::as_i64),
+        now: value
+            .get("now")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_default(),
+    })
+}
+
+/// Upload `snapshot` only if the server still holds `base` (`""`: nothing
+/// at all). This is what keeps two machines from overwriting each other.
+pub fn put_snapshot_if(
     send: Send,
     server: &str,
     token: &str,
-    root: &Path,
-    plugin: &str,
-) -> Result<bool, String> {
-    let local = read_store(root, plugin)?;
-    if !local.is_empty() {
-        return Err(RESTORE_REFUSED.to_owned());
+    snapshot: &Snapshot,
+    base: &str,
+) -> Result<PutIf, String> {
+    check_config(server, token)?;
+    if snapshot.byte_size() > MAX_SNAPSHOT_BYTES {
+        return Err(format!(
+            "This store is too large to sync ({} MB, limit {} MB)",
+            snapshot.byte_size() / (1024 * 1024),
+            MAX_SNAPSHOT_BYTES / (1024 * 1024)
+        ));
     }
-    match get_snapshot(send, server, token, plugin)? {
-        None => Ok(false),
-        Some(remote) if remote.is_empty() => Ok(false),
-        Some(remote) => {
-            write_store(root, &remote)?;
-            Ok(true)
-        }
+    let mut hs = headers(token);
+    hs.push(("Content-Type".to_owned(), "application/json".to_owned()));
+    let mut body = serde_json::to_value(snapshot).map_err(|e| e.to_string())?;
+    body["base"] = serde_json::Value::String(base.to_owned());
+    let response = send(&Request {
+        method: "PUT",
+        url: endpoint(server, &snapshot.plugin),
+        headers: hs,
+        body: Some(serde_json::to_vec(&body).map_err(|e| e.to_string())?),
+    })
+    .map_err(|e| format!("Could not reach the server: {e}"))?;
+    let reply = || -> Result<serde_json::Value, String> {
+        serde_json::from_slice(&response.body)
+            .map_err(|e| format!("Server returned an invalid reply: {e}"))
+    };
+    if response.status == 409 {
+        let value = reply()?;
+        return Ok(PutIf::Conflict {
+            hash: value
+                .get("hash")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            updated_at: value.get("updated_at").and_then(serde_json::Value::as_i64),
+        });
     }
+    if !success(response.status) {
+        return Err(refusal(response.status, &response.body));
+    }
+    let value = reply()?;
+    Ok(PutIf::Stored {
+        stored: value
+            .get("stored")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true),
+        updated_at: value.get("updated_at").and_then(serde_json::Value::as_i64),
+        usage: Usage::from_reply(&value),
+    })
 }
 
 #[cfg(test)]
@@ -392,76 +483,121 @@ mod tests {
         assert!(get_snapshot(&http, "https://srv.example", "", "notes").is_err());
     }
 
-    // ---- restore ----------------------------------------------------------
+    // ---- head and conditional upload -----------------------------------------
 
     #[test]
-    fn restore_fills_an_empty_store() {
+    fn the_head_names_the_hash_and_its_time_without_the_files() {
         let (rt, server) = mock_server();
         mount(
             &rt,
             &server,
             Mock::given(method("GET"))
-                .and(req_path("/plugins/notes"))
+                .and(req_path("/plugins/notes/head"))
+                .and(header("Authorization", "Bearer tok-42"))
                 .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                    "plugin": "notes", "hash": "h1",
-                    "files": { "0001": "Groceries" }
+                    "plugin": "notes", "hash": "h1", "updated_at": 100, "now": 160
                 }))),
         );
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().join("notes");
-        assert!(restore(&http, &server.uri(), "tok-42", &root, "notes").unwrap());
         assert_eq!(
-            std::fs::read_to_string(root.join("0001")).unwrap(),
-            "Groceries"
-        );
-    }
-
-    /// The machine in front of the user wins. A backup does not get to
-    /// overwrite live notes.
-    #[test]
-    fn restore_refuses_to_run_over_live_data() {
-        let (rt, server) = mock_server();
-        mount(
-            &rt,
-            &server,
-            Mock::given(method("GET"))
-                .and(req_path("/plugins/notes"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                    "plugin": "notes", "hash": "h1", "files": { "0001": "from the server" }
-                }))),
-        );
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().join("notes");
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(root.join("0001"), "mine, written here").unwrap();
-
-        assert!(restore(&http, &server.uri(), "tok-42", &root, "notes").is_err());
-        assert_eq!(
-            std::fs::read_to_string(root.join("0001")).unwrap(),
-            "mine, written here"
+            get_head(&http, &server.uri(), "tok-42", "notes").unwrap(),
+            Head {
+                hash: Some("h1".to_owned()),
+                updated_at: Some(100),
+                now: 160
+            }
         );
     }
 
     #[test]
-    fn restore_with_nothing_stored_reports_nothing_done() {
+    fn nothing_stored_is_a_head_without_a_hash() {
         let (rt, server) = mock_server();
         mount(
             &rt,
             &server,
             Mock::given(method("GET"))
-                .and(req_path("/plugins/notes"))
+                .and(req_path("/plugins/notes/head"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "plugin": "notes", "hash": null, "updated_at": null, "now": 5
+                }))),
+        );
+        let head = get_head(&http, &server.uri(), "tok", "notes").unwrap();
+        assert_eq!(head.hash, None);
+        assert_eq!(head.updated_at, None);
+    }
+
+    /// A server from before sync has no `/head`: say so, rather than treat it
+    /// as "nothing stored" and upload over a backup.
+    #[test]
+    fn a_server_without_sync_is_said_in_words() {
+        let (rt, server) = mock_server();
+        mount(
+            &rt,
+            &server,
+            Mock::given(method("GET"))
+                .and(req_path("/plugins/notes/head"))
                 .respond_with(ResponseTemplate::new(404)),
         );
-        let dir = tempfile::tempdir().unwrap();
-        assert!(
-            !restore(
+        let err = get_head(&http, &server.uri(), "tok", "notes").unwrap_err();
+        assert!(err.contains("sync"), "{err}");
+    }
+
+    #[test]
+    fn a_conditional_upload_sends_its_base() {
+        let (rt, server) = mock_server();
+        mount(
+            &rt,
+            &server,
+            Mock::given(method("PUT"))
+                .and(req_path("/plugins/notes"))
+                .and(wiremock::matchers::body_partial_json(
+                    json!({ "base": "h0" }),
+                ))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "stored": true, "updated_at": 7
+                }))),
+        );
+        assert_eq!(
+            put_snapshot_if(
                 &http,
                 &server.uri(),
-                "tok-42",
-                &dir.path().join("notes"),
-                "notes"
+                "tok",
+                &Snapshot::new("notes", files()),
+                "h0"
             )
-            .unwrap()
+            .unwrap(),
+            PutIf::Stored {
+                stored: true,
+                updated_at: Some(7),
+                usage: None
+            }
+        );
+    }
+
+    #[test]
+    fn a_stale_base_is_a_conflict_with_the_servers_head() {
+        let (rt, server) = mock_server();
+        mount(
+            &rt,
+            &server,
+            Mock::given(method("PUT"))
+                .and(req_path("/plugins/notes"))
+                .respond_with(ResponseTemplate::new(409).set_body_json(json!({
+                    "hash": "h2", "updated_at": 9
+                }))),
+        );
+        assert_eq!(
+            put_snapshot_if(
+                &http,
+                &server.uri(),
+                "tok",
+                &Snapshot::new("notes", files()),
+                "h0"
+            )
+            .unwrap(),
+            PutIf::Conflict {
+                hash: Some("h2".to_owned()),
+                updated_at: Some(9)
+            }
         );
     }
 }

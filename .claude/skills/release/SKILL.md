@@ -68,7 +68,7 @@ window short.
    cargo check --no-default-features --features plugin
    cargo fmt --all -- --check
    (cd tools/sicompass-plugin && cargo test)
-   (cd sicompass-payments && cargo test)
+   (cd sicompass-sync && cargo test)
    (cd examples/hello-plugin && cargo test)
    ```
    Then prove the app builds against it without committing a patch:

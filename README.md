@@ -118,7 +118,7 @@ is `~/.config/sicompass/plugins/` on Linux, `~/Library/Application
 Support/sicompass/plugins/` on macOS and `%APPDATA%\sicompass\plugins\` on
 Windows. A plugin installed by hand does not run until the user approves it: restart
 Sicompass, open store, then programs, and press approve on its entry, which
-shows what it declares first. Approving also enables it.
+shows what it declares first. Once approved, it is in the root list.
 
 A release is one archive per platform, packed and signed with
 `tools/sicompass-plugin` (`pack --bin <target>=<executable>` once per platform,

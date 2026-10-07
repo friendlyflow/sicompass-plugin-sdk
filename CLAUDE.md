@@ -11,17 +11,20 @@ definition of the plugin protocol. It holds four crates:
   the `Plugin` trait, `main!`, and the plugin side of that protocol, which is
   what a plugin depends on (`default-features = false, features = ["plugin"]`).
   See `../sicompass/docs/process-plugins.md`.
-- `sicompass-payments` (`sicompass-payments/`): cloud backup for plugins that
-  keep their data in their own folder (sicompass's notes and board plugins, and
-  any third party's). Snapshots, the backup protocol over the caller's `send`
-  (the plugin's own HTTP client), the debounce, and `cloud::Cloud`, the whole
-  service as a plugin runs it, over a small `Host` trait. It brings no threads,
-  HTTP client or app configuration of its own. Its own workspace root, taken by
-  git (not on crates.io). Certificates, tiers, checkout and redeem are **not**
-  here, on purpose: they are the app's (sicompass's Store), and a plugin reaches
-  them only through `sicompass_sdk::plugin::license`. The paywall is on the
-  service, never on the data. Test it with `cargo test` in its folder. Its
-  `tests/live_server.rs` runs by hand against `../server`.
+- `sicompass-sync` (`sicompass-sync/`): cloud sync for plugins that keep
+  their data in their own folder (sicompass's notes and board plugins, and any
+  third party's). The store's Merkle tree (`merkle`: the hash formula, which is
+  a wire format, the diff, and the three-way merge), snapshots, the sync
+  protocol over the caller's `send` (the plugin's own HTTP client), the
+  debounce, and `cloud::Cloud`, the whole service as a plugin runs it, over a
+  small `Host` trait. It brings no threads, HTTP client or app configuration of
+  its own. Its own workspace root, taken by git (not on crates.io). The server
+  (`../server`) takes it by git too, for the same hashes. Certificates, tiers,
+  checkout and redeem are **not** here, on purpose: they are the app's
+  (sicompass's Store), and a plugin reaches them only through
+  `sicompass_sdk::plugin::license`. The paywall is on the service, never on the
+  data. Test it with `cargo test` in its folder. Its `tests/live_server.rs`
+  runs by hand against `../server`.
 - `examples/hello-plugin`: the smallest useful plugin, its own workspace root.
 - `tools/sicompass-plugin`: the release tool (keygen, pack, sign, verify), its
   own workspace root. It uses the SDK's `package` feature and `plugin_abi`, the
@@ -91,7 +94,7 @@ instead, or split into separate sentences.
   `tests/fixtures/stdio_plugin.rs`).
 - `cargo check --no-default-features --features plugin`: the plugin half must
   not pull in the app's dependencies.
-- `cargo test` in `tools/sicompass-plugin`, `sicompass-payments` and
+- `cargo test` in `tools/sicompass-plugin`, `sicompass-sync` and
   `examples/hello-plugin`, each its own workspace root.
 - A change the app sees is also checked from `../sicompass` with
   `--config 'patch.crates-io.sicompass-sdk.path="../sicompass-plugin-sdk"'`,

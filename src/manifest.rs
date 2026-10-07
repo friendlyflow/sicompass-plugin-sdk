@@ -2,8 +2,8 @@
 //!
 //! Libs call [`register_builtin_manifest`] from their `register()` function to
 //! declare their display name, default-enabled state, and setting declarations.
-//! The app calls [`builtin_manifests`] at startup to drive the "Available programs:"
-//! section and setting injection without having direct knowledge of any lib crate.
+//! The app calls [`builtin_manifests`] at startup to load the built-in programs
+//! and inject their settings without having direct knowledge of any lib crate.
 
 use std::sync::{Mutex, OnceLock};
 
@@ -93,8 +93,8 @@ impl SettingDecl {
 /// Describes a built-in provider.
 ///
 /// Libs construct and register one of these per provider they ship.
-/// The app iterates [`builtin_manifests`] at startup to wire up the
-/// "Available programs:" section and provider-specific settings — without
+/// The app iterates [`builtin_manifests`] at startup to load the built-in
+/// programs and wire up provider-specific settings — without
 /// needing a direct dependency on any lib crate.
 #[derive(Debug, Clone)]
 pub struct BuiltinManifest {
@@ -102,10 +102,11 @@ pub struct BuiltinManifest {
     pub name: String,
     /// Display name shown in the UI and settings section header.
     pub display_name: String,
-    /// Whether the provider is on by default in `Available programs:`.
+    /// Whether the provider is on by default. The app no longer reads it:
+    /// every built-in loads.
     pub enable_default: bool,
-    /// If true the provider is registered unconditionally and not listed in
-    /// "Available programs:" (e.g. the file browser).
+    /// If true the provider is registered first, before the other built-ins
+    /// (e.g. the Store).
     pub always_enabled: bool,
     pub settings: Vec<SettingDecl>,
 }
