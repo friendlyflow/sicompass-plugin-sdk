@@ -325,11 +325,13 @@ fn dispatch<T: Plugin>(p: &mut T, request: Request) -> Response {
                 .map(|e| e.map(|e| encode_one(&e))),
         ),
         Request::CommandListItems(cmd) => R::ListItems(p.command_list_items(&cmd)),
-        Request::ExecuteCommand { cmd, selection } => R::Bool(if cmd == super::RENDER_URL_COMMAND {
-            p.render_url(&selection)
-        } else {
-            p.execute_command(&cmd, &selection)
-        }),
+        Request::ExecuteCommand { cmd, selection } => {
+            R::Bool(if cmd == super::RENDER_URL_COMMAND {
+                p.render_url(&selection)
+            } else {
+                p.execute_command(&cmd, &selection)
+            })
+        }
         Request::CreateElement(key) => R::OptFfon(p.create_element(&key).map(|e| encode_one(&e))),
         Request::OnRadioChange { group, value } => {
             p.on_radio_change(&group, &value);

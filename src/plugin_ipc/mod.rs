@@ -416,7 +416,10 @@ mod tests {
                 checked: true,
             },
             Request::SetInputValue(s()),
-            Request::OnSettingChange { key: s(), value: s() },
+            Request::OnSettingChange {
+                key: s(),
+                value: s(),
+            },
             Request::TakeTimelineEntries,
             Request::Undo(op()),
             Request::Redo(op()),

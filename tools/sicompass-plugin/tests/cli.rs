@@ -189,7 +189,10 @@ fn a_plugin_process_packs_one_archive_per_target_and_verifies() {
     );
     assert!(ok, "{out}");
     assert!(out.contains("proc 1.0.0 (ABI process/1.0)"), "{out}");
-    assert!(out.contains("plugin.exe for x86_64-pc-windows-msvc"), "{out}");
+    assert!(
+        out.contains("plugin.exe for x86_64-pc-windows-msvc"),
+        "{out}"
+    );
     for f in [
         "plugin-aarch64-apple-darwin.tar.gz",
         "plugin-x86_64-pc-windows-msvc.tar.gz",
@@ -233,6 +236,12 @@ fn a_plugin_process_needs_known_targets_and_a_wasm_manifest_is_refused() {
         r#"{ "name": "proc", "displayName": "proc", "entry": "plugin.wasm", "version": "1.0.0" }"#,
     )
     .unwrap();
-    let (ok, out) = tool(&["pack", "--bin", "aarch64-apple-darwin=build/mac"], dir.path());
-    assert!(!ok && out.contains("`wasm` is no longer supported"), "{out}");
+    let (ok, out) = tool(
+        &["pack", "--bin", "aarch64-apple-darwin=build/mac"],
+        dir.path(),
+    );
+    assert!(
+        !ok && out.contains("`wasm` is no longer supported"),
+        "{out}"
+    );
 }

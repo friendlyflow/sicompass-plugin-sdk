@@ -50,14 +50,14 @@ mod types_reexport {
 }
 pub use types_reexport::*;
 
-/// The FFON data model, re-exported so a plugin needs one import path.
-pub use crate::{FfonElement, FfonObject, IdArray};
 /// Naming your own assets: `assets::uri("my-plugin", "logo.png")` builds the
 /// `asset:` string an `<image>`/`<link>` tag or
 /// [`Plugin::dashboard_image_path`] should carry. The app resolves it.
 pub use crate::assets;
 /// The command id the app renders a URL with (see [`Plugin::render_url`]).
 pub use crate::plugin_abi::RENDER_URL_COMMAND;
+/// The FFON data model, re-exported so a plugin needs one import path.
+pub use crate::{FfonElement, FfonObject, IdArray};
 
 #[cfg(not(target_arch = "wasm32"))]
 mod runtime;

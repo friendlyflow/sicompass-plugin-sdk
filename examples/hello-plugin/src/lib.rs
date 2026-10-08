@@ -21,9 +21,11 @@ impl Plugin for Hello {
     fn new() -> Self {
         let ticks = Arc::new(AtomicU64::new(0));
         let counter = ticks.clone();
-        std::thread::spawn(move || loop {
-            std::thread::sleep(Duration::from_secs(1));
-            counter.fetch_add(1, Ordering::Relaxed);
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+                counter.fetch_add(1, Ordering::Relaxed);
+            }
         });
         Hello {
             path: "/".into(),

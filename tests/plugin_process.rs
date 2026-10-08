@@ -44,7 +44,9 @@ fn the_channel_survives_stdout_and_children_and_ends_with_the_app() {
     let mut call = |id, request| {
         write_message(&mut to, &Message::Call { id, request }).unwrap();
         match read_message(&mut from).unwrap() {
-            Some(Message::Reply { id: got, response, .. }) => {
+            Some(Message::Reply {
+                id: got, response, ..
+            }) => {
                 assert_eq!(got, id);
                 response
             }
@@ -78,13 +80,19 @@ fn the_channel_survives_stdout_and_children_and_ends_with_the_app() {
         if let Some(s) = child.try_wait().unwrap() {
             break s;
         }
-        assert!(start.elapsed() < Duration::from_secs(5), "the plugin did not exit");
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "the plugin did not exit"
+        );
         std::thread::sleep(Duration::from_millis(20));
     };
     assert!(status.success());
     let mut log = String::new();
     std::io::Read::read_to_string(&mut child.stderr.take().unwrap(), &mut log).unwrap();
-    assert!(log.contains("stdout during new"), "println! went to the log: {log}");
+    assert!(
+        log.contains("stdout during new"),
+        "println! went to the log: {log}"
+    );
     assert!(log.contains("stdout during fetch"), "{log}");
     assert!(log.contains("child stdout"), "{log}");
 }

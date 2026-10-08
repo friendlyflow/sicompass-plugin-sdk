@@ -24,7 +24,10 @@ impl Plugin for Noisy {
     }
     fn fetch(&mut self) -> Vec<FfonElement> {
         println!("stdout during fetch");
-        vec![FfonElement::new_str(format!("child read [{}]", self.child_read))]
+        vec![FfonElement::new_str(format!(
+            "child read [{}]",
+            self.child_read
+        ))]
     }
     fn execute_command(&mut self, cmd: &str, _selection: &str) -> bool {
         if cmd != "read-stdin" {

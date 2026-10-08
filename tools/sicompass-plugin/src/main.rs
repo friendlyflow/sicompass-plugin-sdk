@@ -267,7 +267,10 @@ fn pack_process(
         println!("  {f}");
     }
     for target in archives.keys() {
-        println!("  {} for {target}", plugin_abi::executable_name(&manifest.entry, target));
+        println!(
+            "  {} for {target}",
+            plugin_abi::executable_name(&manifest.entry, target)
+        );
     }
     println!(
         "wrote {} archives and {}",

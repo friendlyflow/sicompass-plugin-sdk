@@ -236,8 +236,10 @@ mod tests {
 
     #[test]
     fn nothing_is_granted_by_default() {
-        let m =
-            parse_manifest(r#"{ "name": "x", "displayName": "x", "type": "process", "entry": "p" }"#).unwrap();
+        let m = parse_manifest(
+            r#"{ "name": "x", "displayName": "x", "type": "process", "entry": "p" }"#,
+        )
+        .unwrap();
         assert_eq!(m.permissions, Permissions::default());
         assert!(m.allowed_hosts().is_empty());
         assert_eq!(m.plugin_type, PluginType::Process);
@@ -246,8 +248,10 @@ mod tests {
 
     #[test]
     fn rendering_pages_is_declared_and_off_by_default() {
-        let plain =
-            parse_manifest(r#"{ "name": "x", "displayName": "x", "type": "process", "entry": "p" }"#).unwrap();
+        let plain = parse_manifest(
+            r#"{ "name": "x", "displayName": "x", "type": "process", "entry": "p" }"#,
+        )
+        .unwrap();
         assert!(!plain.renders_pages);
         let browser = parse_manifest(
             r#"{ "name": "x", "displayName": "x", "type": "process", "entry": "p", "rendersPages": true }"#,

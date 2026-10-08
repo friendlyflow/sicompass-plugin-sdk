@@ -181,8 +181,10 @@ mod tests {
 
     #[test]
     fn a_plugin_process_always_needs_approval_under_a_line_of_its_own() {
-        let process = manifest(r#"{ "name": "x", "displayName": "x", "type": "process", "entry": "p" }"#);
-        let builtin = manifest(r#"{ "name": "x", "displayName": "x", "type": "factory", "entry": "" }"#);
+        let process =
+            manifest(r#"{ "name": "x", "displayName": "x", "type": "process", "entry": "p" }"#);
+        let builtin =
+            manifest(r#"{ "name": "x", "displayName": "x", "type": "factory", "entry": "" }"#);
         assert!(needs_approval(&process));
         assert!(!needs_approval(&builtin));
         assert!(approval_fingerprint(&process).starts_with("process;"));
@@ -207,7 +209,10 @@ mod tests {
             executable_name("plugin", t),
             format!("plugin{}", std::env::consts::EXE_SUFFIX)
         );
-        assert_eq!(executable_name("plugin", "x86_64-pc-windows-msvc"), "plugin.exe");
+        assert_eq!(
+            executable_name("plugin", "x86_64-pc-windows-msvc"),
+            "plugin.exe"
+        );
         assert_eq!(executable_name("plugin", "aarch64-apple-darwin"), "plugin");
     }
 
@@ -237,7 +242,9 @@ mod tests {
                      "allowedHosts": [{hosts}] }}"#
             ))
         };
-        assert!(reaches_any_server(&m(r#""example.com", "*""#).allowed_hosts()));
+        assert!(reaches_any_server(
+            &m(r#""example.com", "*""#).allowed_hosts()
+        ));
         assert!(!reaches_any_server(&m(r#""example.com""#).allowed_hosts()));
         assert_ne!(
             approval_fingerprint(&m(r#""*""#)),

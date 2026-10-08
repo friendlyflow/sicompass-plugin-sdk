@@ -91,8 +91,7 @@ impl App {
     fn start() -> App {
         let (plugin_reads, to_plugin) = std::io::pipe().unwrap();
         let (from_plugin, plugin_writes) = std::io::pipe().unwrap();
-        let server =
-            std::thread::spawn(move || serve::<Echo>("echo", plugin_reads, plugin_writes));
+        let server = std::thread::spawn(move || serve::<Echo>("echo", plugin_reads, plugin_writes));
         let mut app = App {
             to_plugin,
             from_plugin,

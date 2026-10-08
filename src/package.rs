@@ -673,11 +673,20 @@ mod tests {
         }
     }
 
-    fn process_release() -> (BTreeMap<String, Vec<u8>>, ReleaseInfo, Vec<u8>, String, String) {
+    fn process_release() -> (
+        BTreeMap<String, Vec<u8>>,
+        ReleaseInfo,
+        Vec<u8>,
+        String,
+        String,
+    ) {
         let dir = plugin_dir();
         let m = manifest_with("2.0.0", r#""process": ["git"]"#);
         let files = collect_files(dir.path(), &m).unwrap();
-        assert!(!files.contains(&"plugin".to_owned()), "each target brings its own");
+        assert!(
+            !files.contains(&"plugin".to_owned()),
+            "each target brings its own"
+        );
         let mut archives = BTreeMap::new();
         for (target, exe) in [
             ("x86_64-unknown-linux-musl", &b"\x7fELF linux"[..]),
@@ -728,7 +737,9 @@ mod tests {
     #[test]
     fn a_process_release_refuses_a_missing_target_and_another_targets_archive() {
         let (archives, info, json, sig, public) = process_release();
-        let e = info.archive_for(Some("riscv64gc-unknown-linux-musl")).unwrap_err();
+        let e = info
+            .archive_for(Some("riscv64gc-unknown-linux-musl"))
+            .unwrap_err();
         assert!(e.contains("no build for this computer"), "{e}");
         assert!(info.archive_for(None).is_err());
         assert_eq!(

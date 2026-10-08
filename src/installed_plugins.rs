@@ -294,7 +294,10 @@ mod tests {
         assert!(register_locales("ilp-once", &dir).is_empty());
         // A second caller is not refused for redefining the same ids.
         assert!(register_locales("ilp-once", &dir).is_empty());
-        assert_eq!(localize::try_t("ilp-once-display-name").as_deref(), Some("Once"));
+        assert_eq!(
+            localize::try_t("ilp-once-display-name").as_deref(),
+            Some("Once")
+        );
     }
 
     #[test]
