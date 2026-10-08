@@ -343,7 +343,7 @@ pub(crate) mod tests {
     /// A board, written as the plugin would: To do [a, b].
     pub(crate) fn board(cards: &[&str]) -> BTreeMap<String, String> {
         let mut f = files(&[
-            (".listmeta", r#"{"children":[{"n":1,"id":1}]}"#),
+            (".header", r#"{"children":[{"n":1,"id":1}]}"#),
             ("0001", "To do"),
         ]);
         let children: Vec<String> = cards
@@ -352,7 +352,7 @@ pub(crate) mod tests {
             .map(|(i, _)| format!(r#"{{"n":{},"id":{}}}"#, i + 1, i + 2))
             .collect();
         f.insert(
-            "0001.d/.listmeta".to_owned(),
+            "0001.d/.header".to_owned(),
             format!(r#"{{"children":[{}]}}"#, children.join(",")),
         );
         for (i, c) in cards.iter().enumerate() {
@@ -581,9 +581,9 @@ pub(crate) mod tests {
     fn a_store_written_without_hashes_syncs_in_its_canonical_form() {
         let dir = tempfile::tempdir().unwrap();
         let legacy = files(&[
-            (".listmeta", r#"{"children":[{"n":1,"id":1}]}"#),
+            (".header", r#"{"children":[{"n":1,"id":1}]}"#),
             ("0001", "To do"),
-            ("0001.d/.listmeta", r#"{"children":[{"n":1,"id":2}]}"#),
+            ("0001.d/.header", r#"{"children":[{"n":1,"id":2}]}"#),
             ("0001.d/0001", "a"),
         ]);
         write(dir.path(), &legacy);
@@ -592,6 +592,49 @@ pub(crate) mod tests {
         let stored = server.stored.borrow().as_ref().unwrap().0.files.clone();
         assert_eq!(merkle::verify(&stored), Verified::Ok);
         assert_eq!(cards(&stored), vec!["a"]);
+    }
+
+    /// What an older plugin left behind: every `.header` still a `.listmeta`.
+    fn under_the_old_name(f: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+        f.iter()
+            .map(|(p, v)| (p.replace(merkle::HEADER, merkle::LEGACY_HEADER), v.clone()))
+            .collect()
+    }
+
+    /// The server and the base hold the store as an older plugin saved it, and
+    /// this machine's plugin has since saved it under the new name: one upload
+    /// renames it on the server too, and then the two agree.
+    #[test]
+    fn a_store_synced_under_the_old_sidecar_name_moves_to_the_new_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = Snapshot::new("things", under_the_old_name(&board(&["a"])));
+        let server = FakeServer::default();
+        *server.stored.borrow_mut() = Some((old.clone(), 0));
+        Base {
+            hash: old.hash.clone(),
+            updated_at: Some(0),
+            files: old.files.clone(),
+        }
+        .save(dir.path())
+        .unwrap();
+        write(dir.path(), &board(&["a"]));
+
+        assert_eq!(run(&server, dir.path()), Outcome::Pushed);
+        let stored = server.stored.borrow().as_ref().unwrap().0.files.clone();
+        assert_eq!(stored, board(&["a"]));
+        assert_eq!(run(&server, dir.path()), Outcome::UpToDate);
+    }
+
+    #[test]
+    fn a_pull_of_a_store_under_the_old_sidecar_name_writes_the_new_one() {
+        let server = FakeServer::default();
+        let old = Snapshot::new("things", under_the_old_name(&board(&["a", "b"])));
+        *server.stored.borrow_mut() = Some((old, 0));
+        let dir = tempfile::tempdir().unwrap();
+        let Outcome::Apply { files, .. } = run(&server, dir.path()) else {
+            panic!("expected a pull");
+        };
+        assert_eq!(files, board(&["a", "b"]));
     }
 
     #[test]

@@ -5,7 +5,7 @@
 //!
 //! Both plugins, the server and every peer compute the same bytes, so the
 //! definition below is a contract, not an implementation detail. Changing it
-//! invalidates every stored `.listmeta` and every comparison already made.
+//! invalidates every stored `.header` and every comparison already made.
 //!
 //! ```text
 //! hash(leaf)   = sha256( b"s\0" || text )
@@ -20,7 +20,7 @@
 //!
 //! Deliberately **not** hashed: ids (local bookkeeping, so two machines that
 //! built the same tree agree on its root), and every other field a plugin keeps
-//! in `.listmeta` (notes' `visibility`, the board's `archive`): a change of
+//! in `.header` (notes' `visibility`, the board's `archive`): a change of
 //! audience or of filing, not of content. Those travel as [`Extras`], and the
 //! flat snapshot hash ([`crate::snapshot::Snapshot::hash`]) is what notices
 //! when they change.
@@ -31,11 +31,15 @@
 //! [`crate::snapshot::is_safe_store_path`]):
 //!
 //! ```text
-//! .listmeta   {"sha256":"<root>","children":[{"n":1,"id":7,"sha256":"<d0>"}]}
+//! .header     {"sha256":"<root>","children":[{"n":1,"id":7,"sha256":"<d0>"}]}
 //! 0001        the first object's text, verbatim
 //! 0001.d/     its children, when it is a branch
-//!   .listmeta {"sha256":"<hash of 0001>","children":[...]}
+//!   .header   {"sha256":"<hash of 0001>","children":[...]}
 //! ```
+//!
+//! A store written before the sidecar was renamed calls it `.listmeta`
+//! ([`LEGACY_HEADER`]). Everything here reads either name and writes only
+//! `.header`, so the old name leaves a store on its next save or sync.
 //!
 //! [`parse`] reads that into a [`StoreTree`], [`to_files`] writes one back with
 //! every hash recomputed, [`verify`] checks the hashes a store carries, and
@@ -54,11 +58,27 @@ pub use merge::{Merged, Side, merge3};
 /// never hashed. `0` means "not known yet" and never survives [`parse`].
 pub type Id = u64;
 
-/// The `.listmeta` fields this module does not interpret, kept verbatim.
+/// The `.header` fields this module does not interpret, kept verbatim.
 pub type Extras = BTreeMap<String, serde_json::Value>;
 
 /// The sidecar every list keeps.
-pub const LISTMETA: &str = ".listmeta";
+pub const HEADER: &str = ".header";
+
+/// What [`HEADER`] was called before: read wherever it is, never written.
+pub const LEGACY_HEADER: &str = ".listmeta";
+
+/// Whether a file name is a list's sidecar, under either name.
+pub fn is_header_name(name: &str) -> bool {
+    name == HEADER || name == LEGACY_HEADER
+}
+
+/// The sidecar of the list at `prefix` ("" or "0001.d/"): the `.header`, or
+/// the `.listmeta` of a store saved before the rename.
+fn header_at<'a>(files: &'a BTreeMap<String, String>, prefix: &str) -> Option<&'a String> {
+    files
+        .get(&format!("{prefix}{HEADER}"))
+        .or_else(|| files.get(&format!("{prefix}{LEGACY_HEADER}")))
+}
 
 // ---------------------------------------------------------------------------
 // The hash
@@ -108,7 +128,7 @@ pub fn hex(bytes: &[u8]) -> String {
 /// A whole store: the top-level list.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct StoreTree {
-    /// The root `.listmeta`'s own extra fields.
+    /// The root `.header`'s own extra fields.
     pub list_extra: Extras,
     pub children: Vec<StoreNode>,
 }
@@ -118,7 +138,7 @@ pub struct StoreTree {
 pub struct StoreNode {
     pub id: Id,
     pub text: String,
-    /// Its entry's extra fields in its parent's `.listmeta` (the board's
+    /// Its entry's extra fields in its parent's `.header` (the board's
     /// `archive`).
     pub child_extra: Extras,
     /// `Some` for a branch, even a childless one: a branch is somewhere the
@@ -128,7 +148,7 @@ pub struct StoreNode {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Branch {
-    /// Its own `.listmeta`'s extra fields (notes' `visibility`).
+    /// Its own `.header`'s extra fields (notes' `visibility`).
     pub list_extra: Extras,
     pub children: Vec<StoreNode>,
 }
@@ -184,14 +204,14 @@ fn digests(nodes: &[StoreNode]) -> Vec<[u8; 32]> {
 }
 
 // ---------------------------------------------------------------------------
-// .listmeta
+// .header
 // ---------------------------------------------------------------------------
 
 /// A list's sidecar. The field order is the bytes the plugins write
 /// (`sha256`, then notes' `visibility`, then `children`), so a store a plugin
 /// saved comes back from [`to_files`] unchanged.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ListMeta {
+pub struct ListHeader {
     /// The hash of the object that owns this list, or the root hash at the
     /// top. Empty in a store written before it had hashes.
     #[serde(default)]
@@ -236,7 +256,7 @@ fn parse_entry_name(name: &str) -> Option<usize> {
 /// [`crate::snapshot::Snapshot`]) into a tree.
 ///
 /// As forgiving as the plugins' own loaders: a missing or unreadable
-/// `.listmeta` leaves its ids unknown, a `.d` folder without a file of its own
+/// `.header` leaves its ids unknown, a `.d` folder without a file of its own
 /// is ignored, and an id that is missing or used twice is replaced by a fresh
 /// one above every id in the store (in pre-order), so the result always has
 /// unique, non-zero ids.
@@ -268,9 +288,7 @@ pub fn parse(files: &BTreeMap<String, String>) -> StoreTree {
     }
 
     fn list(ctx: &Ctx, prefix: &str) -> (Extras, Vec<StoreNode>) {
-        let meta: ListMeta = ctx
-            .files
-            .get(&format!("{prefix}{LISTMETA}"))
+        let meta: ListHeader = header_at(ctx.files, prefix)
             .and_then(|raw| serde_json::from_str(raw).ok())
             .unwrap_or_default();
         let mut positions = ctx.dirs.get(prefix).cloned().unwrap_or_default();
@@ -369,13 +387,13 @@ pub fn to_files(tree: &StoreTree) -> BTreeMap<String, String> {
             digests.push(d);
         }
         let own = own(&digests);
-        let meta = ListMeta {
+        let meta = ListHeader {
             sha256: hex(&own),
             extra: list_extra.clone(),
             children,
         };
         out.insert(
-            format!("{prefix}{LISTMETA}"),
+            format!("{prefix}{HEADER}"),
             serde_json::to_string_pretty(&meta).unwrap_or_default(),
         );
         own
@@ -398,7 +416,7 @@ pub enum Verified {
     /// board from before 0.4, a board the Trello script wrote). Nothing to
     /// check, and [`to_files`] fills them in.
     Legacy,
-    /// The deepest `.listmeta` (or a list missing one) whose hashes do not
+    /// The deepest `.header` (or a list missing one) whose hashes do not
     /// match what the store holds, which is where the change is (every
     /// ancestor's is stale too): a store read half-saved, or edited by hand.
     Mismatch { path: String },
@@ -406,10 +424,24 @@ pub enum Verified {
 
 /// Check the hashes a store's files carry against what they hold.
 pub fn verify(files: &BTreeMap<String, String>) -> Verified {
-    let carried: BTreeMap<&String, ListMeta> = files
-        .iter()
-        .filter(|(p, _)| p.rsplit('/').next() == Some(LISTMETA))
-        .map(|(p, raw)| (p, serde_json::from_str(raw).unwrap_or_default()))
+    // Keyed by the `.header` path the canonical form uses, whichever name the
+    // store carries it under (`.header` first, as [`parse`] reads it).
+    let carried: BTreeMap<String, ListHeader> = files
+        .keys()
+        .filter_map(|p| {
+            let (prefix, name) = match p.rfind('/') {
+                Some(i) => (&p[..=i], &p[i + 1..]),
+                None => ("", p.as_str()),
+            };
+            is_header_name(name).then_some(prefix)
+        })
+        .map(|prefix| {
+            let raw = header_at(files, prefix).map_or("", String::as_str);
+            (
+                format!("{prefix}{HEADER}"),
+                serde_json::from_str(raw).unwrap_or_default(),
+            )
+        })
         .collect();
     let any_hash = carried
         .values()
@@ -418,12 +450,12 @@ pub fn verify(files: &BTreeMap<String, String>) -> Verified {
         return Verified::Legacy;
     }
     let canonical = to_files(&parse(files));
-    // Reversed, a folder's `.listmeta` comes before its parent's.
+    // Reversed, a folder's `.header` comes before its parent's.
     for (path, raw) in canonical.iter().rev() {
-        if path.rsplit('/').next() != Some(LISTMETA) {
+        if path.rsplit('/').next() != Some(HEADER) {
             continue;
         }
-        let want: ListMeta = serde_json::from_str(raw).unwrap_or_default();
+        let want: ListHeader = serde_json::from_str(raw).unwrap_or_default();
         let ok = carried.get(path).is_some_and(|have| {
             have.sha256 == want.sha256
                 && have.children.len() == want.children.len()
@@ -769,7 +801,7 @@ mod tests {
     }
 
     /// The bytes the notes plugin writes (`serde_json::to_string_pretty` of
-    /// its own `ListMeta`) come back unchanged: field order included, which is
+    /// its own `ListHeader`) come back unchanged: field order included, which is
     /// where `#[serde(flatten)]` puts `visibility`.
     #[test]
     fn a_notes_store_round_trips_byte_for_byte() {
@@ -782,7 +814,7 @@ mod tests {
             .insert("visibility".to_owned(), json!("private"));
         let written = to_files(&t);
         assert_eq!(
-            written["0001.d/.listmeta"],
+            written["0001.d/.header"],
             format!(
                 "{{\n  \"sha256\": \"{}\",\n  \"visibility\": \"private\",\n  \"children\": [\n    {{\n      \"n\": 1,\n      \"id\": 2,\n      \"sha256\": \"{}\"\n    }},\n    {{\n      \"n\": 2,\n      \"id\": 3,\n      \"sha256\": \"{}\"\n    }}\n  ]\n}}",
                 hex(&t.children[0].hash()),
@@ -799,15 +831,15 @@ mod tests {
     fn a_board_round_trips_with_its_archive_flag_after_the_hash() {
         let b = board();
         let written = to_files(&b);
-        let root = &written[".listmeta"];
+        let root = &written[".header"];
         let archive_entry = root.rfind("\"n\": 3").unwrap();
         let sha = root[archive_entry..].find("\"sha256\"").unwrap();
         let flag = root[archive_entry..].find("\"archive\": true").unwrap();
         assert!(sha < flag, "{root}");
         assert_eq!(parse(&written), b);
         assert_eq!(verify(&written), Verified::Ok);
-        // An empty column is still a branch: its folder holds a `.listmeta`.
-        assert!(written.contains_key("0003.d/.listmeta"));
+        // An empty column is still a branch: its folder holds a `.header`.
+        assert!(written.contains_key("0003.d/.header"));
     }
 
     /// A board saved before it had hashes: no `sha256` anywhere.
@@ -815,14 +847,14 @@ mod tests {
     fn a_store_without_hashes_is_legacy_and_gains_them() {
         let legacy = files(&[
             (
-                ".listmeta",
+                ".header",
                 r#"{"children":[{"n":1,"id":1},{"n":2,"id":4,"archive":true}]}"#,
             ),
             ("0001", "To do"),
-            ("0001.d/.listmeta", r#"{"children":[{"n":1,"id":2}]}"#),
+            ("0001.d/.header", r#"{"children":[{"n":1,"id":2}]}"#),
             ("0001.d/0001", "fix login"),
             ("0002", "Archive"),
-            ("0002.d/.listmeta", r#"{"children":[]}"#),
+            ("0002.d/.header", r#"{"children":[]}"#),
         ]);
         assert_eq!(verify(&legacy), Verified::Legacy);
         let t = parse(&legacy);
@@ -839,18 +871,62 @@ mod tests {
         assert_eq!(
             verify(&written),
             Verified::Mismatch {
-                path: "0001.d/.listmeta".to_owned()
+                path: "0001.d/.header".to_owned()
             }
         );
+    }
+
+    /// A store saved before the sidecar was renamed, every `.header` still a
+    /// `.listmeta`.
+    fn under_the_old_name(files: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+        files
+            .iter()
+            .map(|(p, v)| (p.replace(HEADER, LEGACY_HEADER), v.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn a_store_under_the_old_sidecar_name_reads_the_same() {
+        let b = board();
+        let old = under_the_old_name(&to_files(&b));
+        assert!(old.contains_key("0003.d/.listmeta"));
+        assert_eq!(parse(&old), b);
+        assert_eq!(verify(&old), Verified::Ok);
+        assert_eq!(
+            to_files(&parse(&old)),
+            to_files(&b),
+            "written back as .header only"
+        );
+    }
+
+    #[test]
+    fn a_stale_hash_under_the_old_name_is_a_mismatch_at_its_list() {
+        let mut old = under_the_old_name(&to_files(&notes()));
+        old.insert("0001.d/0001".to_owned(), "oat milk".to_owned());
+        assert_eq!(
+            verify(&old),
+            Verified::Mismatch {
+                path: "0001.d/.header".to_owned()
+            }
+        );
+    }
+
+    /// Both names in one list (a crash between writing the new and removing
+    /// the old): the `.header` is the one that was written last.
+    #[test]
+    fn the_new_sidecar_wins_over_the_old() {
+        let f = files(&[
+            (".header", r#"{"children":[{"n":1,"id":9}]}"#),
+            (".listmeta", r#"{"children":[{"n":1,"id":3}]}"#),
+            ("0001", "a"),
+        ]);
+        assert_eq!(parse(&f).children[0].id, 9);
     }
 
     #[test]
     fn missing_and_repeated_ids_get_fresh_ones_above_the_rest() {
         let f = files(&[
-            (
-                ".listmeta",
-                r#"{"children":[{"n":1,"id":5},{"n":2,"id":5}]}"#,
-            ),
+            (".header", r#"{"children":[{"n":1,"id":5},{"n":2,"id":5}]}"#),
             ("0001", "a"),
             ("0002", "b"),
             ("0003", "c"),
@@ -861,9 +937,9 @@ mod tests {
     }
 
     #[test]
-    fn junk_listmeta_and_orphan_folders_are_forgiven() {
+    fn junk_header_and_orphan_folders_are_forgiven() {
         let f = files(&[
-            (".listmeta", "not json"),
+            (".header", "not json"),
             ("0001", "a"),
             ("0007.d/0001", "orphan"),
         ]);
@@ -877,7 +953,7 @@ mod tests {
     fn an_empty_store_is_an_empty_tree() {
         let t = parse(&BTreeMap::new());
         assert_eq!(t, StoreTree::default());
-        assert_eq!(to_files(&t).len(), 1, "the root .listmeta");
+        assert_eq!(to_files(&t).len(), 1, "the root .header");
     }
 
     // ---- diff -------------------------------------------------------------

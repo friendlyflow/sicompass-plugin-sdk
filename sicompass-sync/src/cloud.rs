@@ -350,7 +350,7 @@ impl Cloud {
 
     /// Whether an object (`None`: the whole store), whose hash is now
     /// `current`, is as it was at the last sync: one line for the plugin's
-    /// list meta, or `None` while the switch is off.
+    /// header row, or `None` while the switch is off.
     pub fn sync_status(&self, id: Option<Id>, current: &str, host: &dyn Host) -> Option<String> {
         if !self.enabled {
             return None;

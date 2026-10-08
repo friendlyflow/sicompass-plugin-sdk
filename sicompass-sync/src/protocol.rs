@@ -292,12 +292,9 @@ mod tests {
 
     fn files() -> BTreeMap<String, String> {
         BTreeMap::from([
-            (".listmeta".to_owned(), r#"{"sha256":"x"}"#.to_owned()),
+            (".header".to_owned(), r#"{"sha256":"x"}"#.to_owned()),
             ("0001".to_owned(), "Groceries".to_owned()),
-            (
-                "0001.d/.listmeta".to_owned(),
-                r#"{"sha256":"y"}"#.to_owned(),
-            ),
+            ("0001.d/.header".to_owned(), r#"{"sha256":"y"}"#.to_owned()),
             ("0001.d/0001".to_owned(), "milk".to_owned()),
         ])
     }

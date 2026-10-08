@@ -3,7 +3,7 @@
 
 [package]
 name = "sicompass-sync"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "Cloud sync for sicompass plugins: the store's Merkle tree, a three-way merge, the sync protocol over the plugin's net, debouncing and the sync row"

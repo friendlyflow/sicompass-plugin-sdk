@@ -5,7 +5,7 @@
 //! every Merkle hash recomputed ([`crate::merkle::to_files`]), which is
 //! byte for byte what the notes and board plugins write themselves.
 //!
-//! [`Snapshot::hash`] is a flat hash over every file, `.listmeta` included, so
+//! [`Snapshot::hash`] is a flat hash over every file, `.header` included, so
 //! it changes with anything in the store, the fields the Merkle hashes leave
 //! out (visibility, the archive flag, ids) as well. It is the store's identity
 //! on the server: the sync compares it to know *whether* two copies differ,
@@ -94,7 +94,9 @@ fn hex(bytes: &[u8]) -> String {
 /// Whether `path` is a legal entry in a provider store.
 ///
 /// The layout is fixed (see `lib_notes/src/store.rs`): every directory level is
-/// `NNNN.d`, and a leaf is either `NNNN` or the `.listmeta` sidecar.
+/// `NNNN.d`, and a leaf is either `NNNN` or the `.header` sidecar (or the
+/// `.listmeta` it was called before, which a store or a backup saved by an
+/// older plugin still holds).
 ///
 /// This is the check that matters most in this crate. `protocol::restore` writes files
 /// under a directory the provider owns, so without it a server reply (a
@@ -113,7 +115,7 @@ pub fn is_safe_store_path(path: &str) -> bool {
     let is_entry = |c: &str| c.len() == 4 && c.bytes().all(|b| b.is_ascii_digit());
     dirs.iter()
         .all(|c| c.strip_suffix(".d").is_some_and(is_entry))
-        && (is_entry(last) || *last == ".listmeta")
+        && (is_entry(last) || crate::merkle::is_header_name(last))
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +211,7 @@ fn prune(dir: &Path, relative: &str, snapshot: &Snapshot) -> Result<(), String> 
         let path = entry.path();
         let rel = format!("{relative}{name}");
         if path.is_dir() {
-            if !is_safe_store_path(&format!("{rel}/.listmeta")) {
+            if !is_safe_store_path(&format!("{rel}/{}", crate::merkle::HEADER)) {
                 continue;
             }
             let prefix = format!("{rel}/");
@@ -248,12 +250,9 @@ mod tests {
 
     fn files() -> BTreeMap<String, String> {
         BTreeMap::from([
-            (".listmeta".to_owned(), r#"{"sha256":"x"}"#.to_owned()),
+            (".header".to_owned(), r#"{"sha256":"x"}"#.to_owned()),
             ("0001".to_owned(), "Groceries".to_owned()),
-            (
-                "0001.d/.listmeta".to_owned(),
-                r#"{"sha256":"y"}"#.to_owned(),
-            ),
+            ("0001.d/.header".to_owned(), r#"{"sha256":"y"}"#.to_owned()),
             ("0001.d/0001".to_owned(), "milk".to_owned()),
         ])
     }
@@ -261,10 +260,12 @@ mod tests {
     #[test]
     fn legal_store_paths_are_accepted() {
         for p in [
-            ".listmeta",
+            ".header",
             "0001",
             "0042.d/0001",
-            "0001.d/0002.d/.listmeta",
+            "0001.d/0002.d/.header",
+            ".listmeta",
+            "0001.d/.listmeta",
         ] {
             assert!(is_safe_store_path(p), "should accept {p}");
         }
@@ -447,6 +448,41 @@ mod tests {
             "kanban",
             BTreeMap::from([
                 (
+                    ".header".to_owned(),
+                    r#"{"children":[{"n":1,"id":1}]}"#.to_owned(),
+                ),
+                ("0001".to_owned(), "To do".to_owned()),
+                ("0001.d/.header".to_owned(), r#"{"children":[]}"#.to_owned()),
+            ]),
+        );
+        let c = canonical(&legacy);
+        assert_ne!(c.hash, legacy.hash);
+        assert_eq!(crate::merkle::verify(&c.files), crate::merkle::Verified::Ok);
+        assert_eq!(canonical(&c), c, "canonical is a fixed point");
+    }
+
+    /// A pull leaves no `.listmeta` behind: the snapshot written is canonical,
+    /// and a sidecar under the old name is one of ours that it does not have.
+    #[test]
+    fn replacing_removes_a_sidecar_under_its_old_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("0001.d")).unwrap();
+        std::fs::write(root.join(".listmeta"), "{}").unwrap();
+        std::fs::write(root.join("0001.d/.listmeta"), "{}").unwrap();
+        replace_store(root, &Snapshot::new("notes", files())).unwrap();
+        assert!(!root.join(".listmeta").exists());
+        assert!(!root.join("0001.d/.listmeta").exists());
+        assert!(root.join(".header").is_file());
+        assert!(root.join("0001.d/.header").is_file());
+    }
+
+    #[test]
+    fn the_canonical_form_renames_the_old_sidecar() {
+        let old = Snapshot::new(
+            "kanban",
+            BTreeMap::from([
+                (
                     ".listmeta".to_owned(),
                     r#"{"children":[{"n":1,"id":1}]}"#.to_owned(),
                 ),
@@ -457,9 +493,13 @@ mod tests {
                 ),
             ]),
         );
-        let c = canonical(&legacy);
-        assert_ne!(c.hash, legacy.hash);
-        assert_eq!(crate::merkle::verify(&c.files), crate::merkle::Verified::Ok);
-        assert_eq!(canonical(&c), c, "canonical is a fixed point");
+        let c = canonical(&old);
+        assert!(
+            c.files.keys().all(|p| !p.ends_with(".listmeta")),
+            "{:?}",
+            c.files.keys()
+        );
+        assert!(c.files.contains_key(".header"));
+        assert!(c.files.contains_key("0001.d/.header"));
     }
 }
