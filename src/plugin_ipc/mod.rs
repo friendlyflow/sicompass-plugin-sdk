@@ -144,6 +144,9 @@ pub enum Request {
     /// Why the user cannot add a row where they are, asked before the app
     /// opens one to type into. Since protocol 1.1.
     CannotAddHere,
+    /// Whether scroll mode may fetch levels the user has not opened. Since
+    /// protocol 1.2.
+    AllowsScrollPrefetch,
 }
 
 /// What a plugin is told when it starts.

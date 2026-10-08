@@ -71,6 +71,9 @@ impl Plugin for Echo {
     fn cannot_add_here(&mut self) -> Option<String> {
         (self.path == "/readonly").then(|| "cannot add to /readonly".to_owned())
     }
+    fn allows_scroll_prefetch(&self) -> bool {
+        false
+    }
     fn on_setting_change(&mut self, _key: &str, value: &str) {
         self.setting = Some(value.to_owned());
     }
@@ -273,6 +276,19 @@ fn cannot_add_here_is_the_plugins_answer() {
     assert_eq!(
         app.call(Request::CannotAddHere).0,
         Response::OptStr(Some("cannot add to /readonly".into()))
+    );
+    app.close();
+}
+
+/// The plugin's own answer, not the trait's default (`true`), reaches the app.
+#[test]
+fn allows_scroll_prefetch_is_the_plugins_answer() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let mut app = App::start();
+    init(&mut app, Vec::new());
+    assert_eq!(
+        app.call(Request::AllowsScrollPrefetch).0,
+        Response::Bool(false)
     );
     app.close();
 }

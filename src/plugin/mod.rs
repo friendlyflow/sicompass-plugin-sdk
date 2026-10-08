@@ -271,6 +271,16 @@ pub trait Plugin: Sized + 'static {
     fn cannot_add_here(&mut self) -> Option<String> {
         None
     }
+    /// Whether scroll mode (`S`) may fetch the levels below the current list
+    /// that the user has not opened, so it can show them flattened. The app
+    /// then calls `push_path`, `fetch` and `pop_path` for those paths as if
+    /// the user had stepped in and out, within a depth, size and time budget.
+    /// Answer `false` when a fetch does more than read (an email server marks
+    /// a fetched message read) or may be slow (each level is a network round
+    /// trip): scroll mode then shows only what the user has opened.
+    fn allows_scroll_prefetch(&self) -> bool {
+        true
+    }
     fn copy_item(
         &mut self,
         _src_dir: &str,

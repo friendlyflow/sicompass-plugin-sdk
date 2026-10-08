@@ -398,6 +398,7 @@ fn dispatch<T: Plugin>(p: &mut T, request: Request) -> Response {
             R::Unit
         }
         Request::CannotAddHere => R::OptStr(p.cannot_add_here()),
+        Request::AllowsScrollPrefetch => R::Bool(p.allows_scroll_prefetch()),
     }
 }
 

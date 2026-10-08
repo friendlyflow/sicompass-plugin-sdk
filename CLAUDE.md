@@ -73,7 +73,9 @@ plugin talk only when the majors match:
   An older peer cannot read it (postcard fails on the unknown variant, and the
   plugin runtime exits on that), so the app sends a new `Request` only to a
   plugin whose hello names that minor (`protocol_has`), and treats an older one
-  like the trait's default. A plugin cannot tell the app's minor, so a new
+  like the trait's default, unless that default is only safe for a plugin that
+  could have said no (`AllowsScrollPrefetch` is `true` by default, and `false`
+  for a plugin older than 1.2). A plugin cannot tell the app's minor, so a new
   `HostRequest` needs an app that knows it.
 - Anything else (a field, a reordered variant, a changed record) is a major
   bump, because postcard encodes by position. Every plugin then needs a new
