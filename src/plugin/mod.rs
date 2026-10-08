@@ -264,6 +264,13 @@ pub trait Plugin: Sized + 'static {
     fn delete_item(&mut self, _name: &str) -> bool {
         false
     }
+    /// Why the user cannot add a row at the current level, in their
+    /// language, or `None` when they can. Asked before the app opens a row to
+    /// type into (`i` on a placeholder, Ctrl+A, Ctrl+I), so a folder the user
+    /// may not write to says so at once rather than after the name is typed.
+    fn cannot_add_here(&mut self) -> Option<String> {
+        None
+    }
     fn copy_item(
         &mut self,
         _src_dir: &str,

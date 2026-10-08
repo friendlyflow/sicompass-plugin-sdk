@@ -10,8 +10,12 @@ use crate::plugin_manifest::Permissions;
 
 /// The protocol a plugin process and the app speak (`crate::plugin_ipc`),
 /// `major.minor`. They talk only when the majors match: a minor bump adds
-/// requests at the end, which an older peer answers as unsupported.
-pub const PROTOCOL_VERSION: &str = "1.0";
+/// requests at the end. An older peer cannot read one (it takes the channel
+/// for broken and exits), so the app sends a request only to a plugin whose
+/// hello names that minor or a later one ([`protocol_has`]).
+///
+/// 1.1 added `Request::CannotAddHere`.
+pub const PROTOCOL_VERSION: &str = "1.1";
 
 /// The `abi` a release of a plugin process names in `release.json`. Unlike
 /// [`ABI_VERSION`], an app that only runs WASM components refuses it rather
@@ -21,6 +25,14 @@ pub const PROCESS_ABI: &str = "process/1.0";
 /// The major part of a version string (`"1"` of `"1.0"`).
 pub fn protocol_major(version: &str) -> &str {
     version.split('.').next().unwrap_or(version)
+}
+
+/// Whether a peer speaking protocol `version` understands what `since` (a
+/// version of this major) added: same major, and its minor at least as late.
+pub fn protocol_has(version: &str, since: &str) -> bool {
+    let minor = |v: &str| v.split('.').nth(1).and_then(|m| m.parse::<u32>().ok());
+    protocol_major(version) == protocol_major(since)
+        && matches!((minor(version), minor(since)), (Some(v), Some(s)) if v >= s)
 }
 
 /// Whether a peer speaking protocol `version` can talk to this SDK.
@@ -200,6 +212,16 @@ mod tests {
         assert!(!process_abi_compatible("0.2.0"));
         assert!(protocol_compatible(PROTOCOL_VERSION));
         assert!(!protocol_compatible("0.2.0"));
+    }
+
+    /// A 1.0 plugin is never sent what 1.1 added, and a later minor is.
+    #[test]
+    fn protocol_has_compares_the_minor_within_one_major() {
+        assert!(protocol_has(PROTOCOL_VERSION, "1.1"));
+        assert!(!protocol_has("1.0", "1.1"));
+        assert!(protocol_has("1.2", "1.1"));
+        assert!(!protocol_has("2.3", "1.1"));
+        assert!(!protocol_has("1", "1.1"));
     }
 
     #[test]

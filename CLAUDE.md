@@ -69,8 +69,12 @@ comes from rust-overlay, like the plugin repos' shells. `flake.lock` pins it.
 `PROTOCOL_VERSION` (`src/plugin_abi.rs`) is `major.minor`, and the app and a
 plugin talk only when the majors match:
 
-- Adding a `Request` or `HostRequest` variant **at the end** is a minor bump: an
-  older peer answers it `Unsupported`.
+- Adding a `Request` or `HostRequest` variant **at the end** is a minor bump.
+  An older peer cannot read it (postcard fails on the unknown variant, and the
+  plugin runtime exits on that), so the app sends a new `Request` only to a
+  plugin whose hello names that minor (`protocol_has`), and treats an older one
+  like the trait's default. A plugin cannot tell the app's minor, so a new
+  `HostRequest` needs an app that knows it.
 - Anything else (a field, a reordered variant, a changed record) is a major
   bump, because postcard encodes by position. Every plugin then needs a new
   release, and `PROCESS_ABI` changes with it.

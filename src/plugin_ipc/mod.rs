@@ -26,7 +26,7 @@ pub use types::*;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 
-pub use crate::plugin_abi::{PROTOCOL_VERSION, protocol_compatible, protocol_major};
+pub use crate::plugin_abi::{PROTOCOL_VERSION, protocol_compatible, protocol_has, protocol_major};
 
 /// The largest message either side accepts. A dashboard frame of 400×200 cells
 /// is about 3 MiB, so this leaves room without letting a broken peer make the
@@ -141,6 +141,9 @@ pub enum Request {
     /// The user switched the app's language. Translations the plugin cached
     /// are stale.
     LocaleChanged,
+    /// Why the user cannot add a row where they are, asked before the app
+    /// opens one to type into. Since protocol 1.1.
+    CannotAddHere,
 }
 
 /// What a plugin is told when it starts.

@@ -68,6 +68,9 @@ impl Plugin for Echo {
     fn render_url(&mut self, url: &str) -> bool {
         url.starts_with("https://")
     }
+    fn cannot_add_here(&mut self) -> Option<String> {
+        (self.path == "/readonly").then(|| "cannot add to /readonly".to_owned())
+    }
     fn on_setting_change(&mut self, _key: &str, value: &str) {
         self.setting = Some(value.to_owned());
     }
@@ -256,6 +259,21 @@ fn translations_are_cached_until_the_language_changes() {
     app.call(Request::LocaleChanged);
     assert_eq!(fetched(&mut app)[0], FfonElement::new_str("Hello"));
     assert_eq!(asked(&app), 2);
+    app.close();
+}
+
+/// The plugin says where nothing can be added, and is silent elsewhere.
+#[test]
+fn cannot_add_here_is_the_plugins_answer() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let mut app = App::start();
+    init(&mut app, Vec::new());
+    assert_eq!(app.call(Request::CannotAddHere).0, Response::OptStr(None));
+    app.call(Request::SetCurrentPath("/readonly".into()));
+    assert_eq!(
+        app.call(Request::CannotAddHere).0,
+        Response::OptStr(Some("cannot add to /readonly".into()))
+    );
     app.close();
 }
 

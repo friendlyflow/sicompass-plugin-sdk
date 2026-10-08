@@ -397,6 +397,7 @@ fn dispatch<T: Plugin>(p: &mut T, request: Request) -> Response {
             with_state_mut(|s| s.translations.clear());
             R::Unit
         }
+        Request::CannotAddHere => R::OptStr(p.cannot_add_here()),
     }
 }
 
