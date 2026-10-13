@@ -16,6 +16,9 @@ use std::path::{Component, Path, PathBuf};
 pub const MAX_LINKS: usize = 40;
 
 enum Seg {
+    /// A Windows path prefix: a drive (`C:`), a verbatim one (`\\?\C:`) or a
+    /// UNC share (`\\server\share`). A Unix path never has one.
+    Prefix(OsString),
     Root(OsString),
     Parent,
     Name(OsString),
@@ -26,7 +29,11 @@ fn segments(path: &Path) -> Vec<Seg> {
     let mut out: Vec<Seg> = path
         .components()
         .filter_map(|c| match c {
-            Component::RootDir | Component::Prefix(_) => Some(Seg::Root(c.as_os_str().to_owned())),
+            // A prefix and the root after it are two segments, not one: on
+            // Windows `C:\x` is `Prefix("C:")`, `RootDir`, `Normal("x")`, and
+            // folding them together let the root throw the drive away.
+            Component::Prefix(_) => Some(Seg::Prefix(c.as_os_str().to_owned())),
+            Component::RootDir => Some(Seg::Root(c.as_os_str().to_owned())),
             Component::CurDir => None,
             Component::ParentDir => Some(Seg::Parent),
             Component::Normal(n) => Some(Seg::Name(n.to_owned())),
@@ -50,11 +57,26 @@ pub fn resolve(path: &Path) -> PathBuf {
 pub fn resolve_with(path: &Path, read_link: impl Fn(&Path) -> Option<PathBuf>) -> PathBuf {
     let mut todo = segments(path);
     let mut out = PathBuf::new();
+    // The Windows prefix the walk currently stands on, so a root restarts the
+    // path *at that drive* rather than at nothing. Dropping it turned every
+    // resolved Windows path into a drive-less one (`C:\Users\me` came back as
+    // `\Users\me`), which the OS then silently reads on whichever drive the
+    // process happens to be on, and which the app refuses outright as not
+    // absolute — a file the browser had just created could not be deleted.
+    // Always `None` on Unix, where no component is a prefix.
+    let mut prefix: Option<OsString> = None;
     let mut hops = 0;
     while let Some(seg) = todo.pop() {
         match seg {
+            Seg::Prefix(p) => {
+                out = PathBuf::from(&p);
+                prefix = Some(p);
+            }
             Seg::Root(r) => {
                 out = PathBuf::new();
+                if let Some(p) = &prefix {
+                    out.push(p);
+                }
                 out.push(r);
             }
             Seg::Parent => {
@@ -73,8 +95,10 @@ pub fn resolve_with(path: &Path, read_link: impl Fn(&Path) -> Option<PathBuf>) -
                 match target {
                     // The target's segments come next, then the rest of the
                     // path. An absolute one starts again from its root (the
-                    // `Root` segment does that); a relative one continues from
-                    // the link's own folder, which `out` still is.
+                    // `Prefix` and `Root` segments do that, and a target on
+                    // another drive brings its own prefix); a relative one
+                    // continues from the link's own folder, which `out` still
+                    // is.
                     Some(target) => {
                         hops += 1;
                         todo.extend(segments(&target));
@@ -85,6 +109,68 @@ pub fn resolve_with(path: &Path, read_link: impl Fn(&Path) -> Option<PathBuf>) -
         }
     }
     out
+}
+
+/// Walking a path that holds no symlinks, which is every platform's job and
+/// was Windows' bug: the `unix`-only module below could not see that a drive
+/// prefix was being thrown away.
+#[cfg(test)]
+mod path_shape {
+    use super::*;
+
+    /// Nothing to follow, so the path comes back as it went in, and still
+    /// absolute. `is_absolute` is the property the app checks before it will
+    /// act on a path a plugin names, so losing it is what broke deleting.
+    #[test]
+    fn a_path_with_no_links_is_itself_and_stays_absolute() {
+        let plain = |p: &str| resolve_with(Path::new(p), |_| None);
+        #[cfg(windows)]
+        for p in [
+            r"C:\",
+            r"C:\Users\someone",
+            r"C:\Users\someone\new.txt",
+            r"D:\data\x.txt",
+            r"\\?\C:\Users\someone",
+            // A UNC share with nothing after it, so no segment is stat'ed:
+            // a test must not wait on a host that is not there.
+            r"\\server\share",
+        ] {
+            let out = plain(p);
+            assert_eq!(out, PathBuf::from(p), "{p} came back changed");
+            assert!(out.is_absolute(), "{p} came back not absolute");
+        }
+        #[cfg(unix)]
+        for p in ["/", "/home/someone", "/home/someone/new.txt"] {
+            let out = plain(p);
+            assert_eq!(out, PathBuf::from(p), "{p} came back changed");
+            assert!(out.is_absolute(), "{p} came back not absolute");
+        }
+    }
+
+    /// `..` climbs without eating the root it stands on.
+    #[test]
+    fn a_parent_stops_at_the_root() {
+        let plain = |p: &str| resolve_with(Path::new(p), |_| None);
+        #[cfg(windows)]
+        {
+            assert_eq!(plain(r"C:\a\..\b"), PathBuf::from(r"C:\b"));
+            assert_eq!(plain(r"C:\..\..\a"), PathBuf::from(r"C:\a"));
+        }
+        #[cfg(unix)]
+        {
+            assert_eq!(plain("/a/../b"), PathBuf::from("/b"));
+            assert_eq!(plain("/../../a"), PathBuf::from("/a"));
+        }
+    }
+
+    /// On Windows a path that is rooted but names no drive (`\Users\me`) is
+    /// the OS's way of saying "this drive", so it keeps the one in hand.
+    #[cfg(windows)]
+    #[test]
+    fn a_rooted_windows_path_with_no_drive_is_left_alone() {
+        let out = resolve_with(Path::new(r"\Users\someone"), |_| None);
+        assert_eq!(out, PathBuf::from(r"\Users\someone"));
+    }
 }
 
 #[cfg(all(test, unix))]
