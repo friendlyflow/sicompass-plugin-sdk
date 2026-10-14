@@ -157,6 +157,12 @@ pub struct Service {
     /// A Fluent id in the plugin's `locales/`: what the service does.
     #[serde(default)]
     pub what: Option<String>,
+    /// The key of the checkbox in `settings` that switches the service on.
+    /// The app shows that row only while the user holds `tier`, and the Store
+    /// ticks it when the user pays (redeems a token) and when it installs the
+    /// plugin while the tier is held.
+    #[serde(default)]
+    pub switch: Option<String>,
 }
 
 impl PluginManifest {
@@ -228,9 +234,24 @@ mod tests {
             vec!["cloud.example.org".to_owned(), "api.example.org".to_owned()]
         );
         assert!(m.permissions.storage);
+        let service = m.service.unwrap();
+        assert_eq!(service.tier, "friendlyflow/cloud");
+        assert_eq!(service.switch, None, "a service without a switch");
+    }
+
+    #[test]
+    fn a_service_names_its_switch() {
+        let m = parse_manifest(
+            r#"{
+                "name": "notes", "displayName": "notes", "type": "process", "entry": "plugin",
+                "settings": [{ "type": "checkbox", "label": "l", "key": "notesCloudBackup" }],
+                "service": { "tier": "friendlyflow/cloud", "switch": "notesCloudBackup" }
+            }"#,
+        )
+        .unwrap();
         assert_eq!(
-            m.service.map(|s| s.tier).as_deref(),
-            Some("friendlyflow/cloud")
+            m.service.and_then(|s| s.switch).as_deref(),
+            Some("notesCloudBackup")
         );
     }
 

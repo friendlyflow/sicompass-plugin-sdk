@@ -340,6 +340,15 @@ pub trait Provider: Send + 'static {
     /// provider implements it. Default: no-op.
     fn set_external_setting_keys(&mut self, _keys: &[&str]) {}
 
+    /// Name settings whose rows are not shown for now. Unlike external
+    /// settings they are still the settings provider's: they keep their value
+    /// and are replayed at startup. Each call replaces the previous set.
+    ///
+    /// Used by sicompass for a plugin's service switch (`service.switch` in
+    /// `plugin.json`) while the user does not hold the service's tier. Only the
+    /// settings provider implements it. Default: no-op.
+    fn set_hidden_setting_keys(&mut self, _keys: &[&str]) {}
+
     /// Create a new FFON element for an "Add element:" section.
     fn create_element(&mut self, _key: &str) -> Option<FfonElement> {
         None
