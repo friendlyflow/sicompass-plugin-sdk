@@ -125,6 +125,25 @@ A release is one archive per platform, packed and signed with
 then `sign` and `verify`). The plugin repos' `scripts/release-plugin.sh` and
 release workflow do all of it.
 
+### Getting listed in the Store
+
+Anyone can install a plugin by hand. Being listed in the Store, where people
+find it and get its updates, needs Sicompass Cloud or Sicompass Commercial,
+whether the plugin is free or not.
+
+1. Publish your releases on GitHub, signed with the key from
+   `sicompass-plugin keygen`.
+2. In Sicompass, open store, then publish. With an active tier it offers
+   submit a plugin: the name from your `plugin.json`, the repository as
+   `owner/name`, and the public key `keygen` printed.
+3. Your submission is reviewed by hand, in a GitHub issue you can follow from
+   your plugins in the same place. A plugin must never lock away what people
+   made with it, and must say which of its features are paid.
+4. Once it is listed, every new release reaches the Store by itself.
+
+If your tier lapses, your plugin stays listed, but its updates are paused at
+the last release you made while it was active, until you renew.
+
 ### Other languages
 
 The protocol is postcard over length-prefixed frames, defined by the Rust types

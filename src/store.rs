@@ -4,9 +4,11 @@
 //! It lives in the sicompass repo (`lib/lib_store/store.json` and
 //! `store.json.sig`). It holds **no versions**: the Store reads each plugin's
 //! signed `release.json` from its repo's latest GitHub release, so releasing a
-//! plugin never needs a sicompass commit. `store.json` changes only when a plugin,
-//! a key or a tier is added, and only a trusted store key can make the app believe
-//! it (docs/plugin-platform.md §8).
+//! plugin never needs a sicompass commit. The one exception is a frozen entry
+//! (a third party whose tier lapsed), which names the release tag it stays at.
+//! `store.json` changes only when a plugin, a key or a tier is added, or an
+//! entry is frozen, and only a trusted store key can make the app believe it
+//! (docs/plugin-platform.md §8).
 
 use std::collections::BTreeMap;
 
@@ -42,7 +44,7 @@ pub struct Tier {
 }
 
 /// One plugin the Store offers.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreEntry {
     /// The plugin's manifest `name`, also its install directory.
@@ -64,15 +66,28 @@ pub struct StoreEntry {
     /// releases, or a broken one. The Store refuses them and offers the latest.
     #[serde(default)]
     pub revoked: Vec<String>,
+    /// The release tag (`v1.4.0`) a third party's entry is frozen at, because
+    /// the tier its listing needs lapsed: the Store installs that release and
+    /// offers nothing newer. Older clients ignore the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frozen: Option<String>,
 }
 
 impl StoreEntry {
-    /// Where a file of this plugin's latest release is downloaded from.
+    /// The folder under `releases_url` (`https://github.com`) that this
+    /// plugin's release files are downloaded from, ending in `/`: the latest
+    /// release, or the frozen one.
+    pub fn release_folder(&self, releases_url: &str) -> String {
+        match &self.frozen {
+            Some(tag) => format!("{releases_url}/{}/releases/download/{tag}/", self.repo),
+            None => format!("{releases_url}/{}/releases/latest/download/", self.repo),
+        }
+    }
+
+    /// Where a file of this plugin's release is downloaded from: the latest
+    /// one, or the one the entry is frozen at.
     pub fn release_url(&self, file: &str) -> String {
-        format!(
-            "https://github.com/{}/releases/latest/download/{file}",
-            self.repo
-        )
+        format!("{}{file}", self.release_folder("https://github.com"))
     }
 
     /// Whether an archive with this SHA-256 has been revoked.
@@ -100,27 +115,10 @@ impl Store {
             if !seen.insert(p.name.as_str()) {
                 return Err(format!("store lists `{}` twice", p.name));
             }
-            let valid_name = !p.name.is_empty()
-                && p.name
-                    .chars()
-                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_');
-            if !valid_name {
-                return Err(format!(
-                    "store plugin name `{}` is not a plain name",
-                    p.name
-                ));
+            check_entry_fields(&p.name, &p.repo, &p.pubkey)?;
+            if let Some(tag) = &p.frozen {
+                check_tag(tag).map_err(|e| format!("`{}`: {e}", p.name))?;
             }
-            let repo_ok = p.repo.split('/').count() == 2
-                && p.repo.split('/').all(|part| {
-                    !part.is_empty()
-                        && part
-                            .chars()
-                            .all(|ch| ch.is_ascii_alphanumeric() || "-_.".contains(ch))
-                });
-            if !repo_ok {
-                return Err(format!("`{}`: repo `{}` is not owner/name", p.name, p.repo));
-            }
-            check_key(&p.pubkey).map_err(|e| format!("`{}`: {e}", p.name))?;
             if let Some(tier) = &p.service
                 && !c.tiers.contains_key(tier)
             {
@@ -138,6 +136,44 @@ impl Store {
 
     pub fn entry(&self, name: &str) -> Option<&StoreEntry> {
         self.plugins.iter().find(|p| p.name == name)
+    }
+}
+
+/// Check what a store entry is made of: a plain name, an `owner/name` repo and
+/// a 32-byte base64 key. The Store's publish form checks a submission with it
+/// before sending it, so the developer hears the same words `store-sign` uses.
+pub fn check_entry_fields(name: &str, repo: &str, pubkey: &str) -> Result<(), String> {
+    let valid_name = !name.is_empty()
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_');
+    if !valid_name {
+        return Err(format!("store plugin name `{name}` is not a plain name"));
+    }
+    let repo_ok = repo.split('/').count() == 2
+        && repo.split('/').all(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || "-_.".contains(ch))
+        });
+    if !repo_ok {
+        return Err(format!("`{name}`: repo `{repo}` is not owner/name"));
+    }
+    check_key(pubkey).map_err(|e| format!("`{name}`: {e}"))
+}
+
+/// A release tag goes into a URL path, so only what GitHub tags are made of.
+fn check_tag(tag: &str) -> Result<(), String> {
+    let ok = !tag.is_empty()
+        && !tag.starts_with('.')
+        && tag
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || "._+-".contains(ch));
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("frozen tag `{tag}` is not a release tag"))
     }
 }
 
@@ -203,6 +239,21 @@ mod tests {
         );
         assert!(notes.is_revoked("abcdef"));
         assert!(!notes.is_revoked("123"));
+        assert_eq!(notes.frozen, None);
+
+        // Frozen: the tagged release, never the latest.
+        let frozen = StoreEntry {
+            frozen: Some("v1.4.0".to_owned()),
+            ..notes.clone()
+        };
+        assert_eq!(
+            frozen.release_url("release.json"),
+            "https://github.com/friendlyflow/notes-plugin-sicompass/releases/download/v1.4.0/release.json"
+        );
+        assert_eq!(
+            frozen.release_folder("http://127.0.0.1:1"),
+            "http://127.0.0.1:1/friendlyflow/notes-plugin-sicompass/releases/download/v1.4.0/"
+        );
 
         // Another key, or an edit after signing: refused.
         let (_, stranger) = generate_keypair().unwrap();
@@ -228,6 +279,58 @@ mod tests {
             )
             .contains("tier")
         );
+        let frozen_at = |tag: &str| {
+            base.replace(
+                "\"revoked\"",
+                &format!("\"frozen\": \"{tag}\", \"revoked\""),
+            )
+        };
+        for tag in ["", "../x", ".hidden", "v1 2", "v1/2"] {
+            let err = Store::parse(frozen_at(tag).as_bytes()).unwrap_err();
+            assert!(err.contains("not a release tag"), "{tag}: {err}");
+        }
+        let c = Store::parse(frozen_at("v1.4.0-rc.1+b2").as_bytes()).unwrap();
+        assert_eq!(
+            c.entry("notes").unwrap().frozen.as_deref(),
+            Some("v1.4.0-rc.1+b2")
+        );
         Store::parse(base.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn a_submission_is_checked_with_the_words_store_sign_uses() {
+        let (_, k) = generate_keypair().unwrap();
+        check_entry_fields("acme", "acme-dev/acme-plugin-sicompass", &k).unwrap();
+        assert!(
+            check_entry_fields("", "a/b", &k)
+                .unwrap_err()
+                .contains("plain name")
+        );
+        assert!(
+            check_entry_fields("acme", "acme", &k)
+                .unwrap_err()
+                .contains("owner/name")
+        );
+        assert!(
+            check_entry_fields("acme", "a/b/c", &k)
+                .unwrap_err()
+                .contains("owner/name")
+        );
+        assert!(
+            check_entry_fields("acme", "a/b", "short")
+                .unwrap_err()
+                .contains("key")
+        );
+    }
+
+    #[test]
+    fn an_entry_that_is_not_frozen_writes_no_frozen_field() {
+        let e = StoreEntry {
+            name: "acme".into(),
+            repo: "a/b".into(),
+            pubkey: "k".into(),
+            ..Default::default()
+        };
+        assert!(!serde_json::to_string(&e).unwrap().contains("frozen"));
     }
 }
