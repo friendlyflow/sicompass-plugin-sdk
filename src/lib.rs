@@ -220,7 +220,7 @@ mod feature_split_tests {
     fn host_surface_present_with_host_feature() {
         assert!(create_provider_by_name("__nonexistent__").is_none());
         assert_eq!(block_on(async { 7 }), 7);
-        assert!(TRASH_SNAPSHOT_LIMIT_BYTES > 0);
+        const { assert!(TRASH_SNAPSHOT_LIMIT_BYTES > 0) };
         assert!(assets::resolve("asset:__nonexistent__/x").is_none());
         // No assertion on the value: the `OnceLock` may already hold a fetcher
         // installed by another test in this binary. Reaching it at all is the point.

@@ -488,7 +488,7 @@ pub fn deserialize_binary(data: &[u8]) -> Vec<FfonElement> {
         // Let's use the simpler approach from the C code: a stack of open objects.
 
         // Pop stack items with layer >= current layer (they are done)
-        while stack.last().map_or(false, |(l, _)| *l >= layer) {
+        while stack.last().is_some_and(|(l, _)| *l >= layer) {
             let (_, child) = stack.pop().unwrap();
             if let Some((_, FfonElement::Obj(parent_obj))) = stack.last_mut() {
                 parent_obj.children.insert(0, child); // we'll fix order below
@@ -548,7 +548,7 @@ fn deserialize_binary_inner(data: &[u8], result: &mut Vec<FfonElement>) {
     for (layer, is_key, content) in entries {
         // Close all objects on the stack that are deeper than or equal to this layer
         // (they are complete — their children come from deeper layers that are now past)
-        while obj_stack.last().map_or(false, |(l, _)| *l >= layer) {
+        while obj_stack.last().is_some_and(|(l, _)| *l >= layer) {
             let (_, finished) = obj_stack.pop().unwrap();
             let finished_elem = FfonElement::Obj(finished);
             if let Some((_, parent)) = obj_stack.last_mut() {
@@ -843,7 +843,7 @@ impl<'a> HtmlParseCtx<'a> {
     }
 
     fn pop_until_level(&mut self, level: u8) {
-        while self.stack.last().map_or(false, |(l, _)| *l >= level) {
+        while self.stack.last().is_some_and(|(l, _)| *l >= level) {
             let (_, entry) = self.stack.pop().unwrap();
             if let Some((_, parent)) = self.stack.last_mut() {
                 parent.as_obj_mut().unwrap().push(entry);
@@ -949,7 +949,7 @@ impl<'a> HtmlParseCtx<'a> {
                         list_obj.as_obj_mut().unwrap().push(prefixed);
                     }
                 }
-                if list_obj.as_obj().map_or(false, |o| !o.children.is_empty()) {
+                if list_obj.as_obj().is_some_and(|o| !o.children.is_empty()) {
                     self.add_to_current(list_obj);
                 }
             }
@@ -1025,7 +1025,7 @@ impl<'a> HtmlParseCtx<'a> {
                 if let Some(dt) = current_dt {
                     dl_obj.as_obj_mut().unwrap().push(dt);
                 }
-                if dl_obj.as_obj().map_or(false, |o| !o.children.is_empty()) {
+                if dl_obj.as_obj().is_some_and(|o| !o.children.is_empty()) {
                     self.add_to_current(dl_obj);
                 }
             }
@@ -1248,7 +1248,7 @@ impl<'a> HtmlParseCtx<'a> {
                         ));
                     }
                 }
-                if radio_obj.as_obj().map_or(false, |o| !o.children.is_empty()) {
+                if radio_obj.as_obj().is_some_and(|o| !o.children.is_empty()) {
                     self.add_to_current(radio_obj);
                 }
                 if had_own_id {
@@ -1573,11 +1573,11 @@ const GENERIC_CONTAINER_KEYS: &[&str] = &[
 fn split_id_prefix(key: &str) -> (&str, &str) {
     const OPEN: &str = "<id>";
     const CLOSE: &str = "</id>";
-    if let Some(after) = key.strip_prefix(OPEN) {
-        if let Some(idx) = after.find(CLOSE) {
-            let end = OPEN.len() + idx + CLOSE.len();
-            return (&key[..end], &key[end..]);
-        }
+    if let Some(after) = key.strip_prefix(OPEN)
+        && let Some(idx) = after.find(CLOSE)
+    {
+        let end = OPEN.len() + idx + CLOSE.len();
+        return (&key[..end], &key[end..]);
     }
     ("", key)
 }
@@ -1610,10 +1610,11 @@ fn nav_sample_label(text: &str) -> Option<String> {
     // Strip list-item markers ("- ", "1. ").
     if let Some(stripped) = rest.strip_prefix("- ") {
         rest = stripped.trim_start();
-    } else if let Some((num, tail)) = rest.split_once(". ") {
-        if !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()) {
-            rest = tail.trim_start();
-        }
+    } else if let Some((num, tail)) = rest.split_once(". ")
+        && !num.is_empty()
+        && num.chars().all(|c| c.is_ascii_digit())
+    {
+        rest = tail.trim_start();
     }
     if rest.is_empty() {
         return None;
@@ -1663,7 +1664,7 @@ fn collapse_redundant_wrapper(o: &mut FfonObject) {
 ///
 /// Only keys change, plus removal of redundant wrapper levels; form-map paths
 /// resolve by `form_N` segment and navigation is index-based, so neither breaks.
-fn improve_navigability(elems: &mut Vec<FfonElement>) {
+fn improve_navigability(elems: &mut [FfonElement]) {
     collapse_generic_wrappers(elems);
     rename_generic_containers(elems);
 }
@@ -1807,10 +1808,10 @@ pub fn html_resolve_href(href: &str, base_url: &str) -> String {
     if href.contains("://") || href.starts_with("mailto:") || href.starts_with("tel:") {
         return href.to_owned();
     }
-    if let Ok(base) = url::Url::parse(base_url) {
-        if let Ok(resolved) = base.join(href) {
-            return resolved.to_string();
-        }
+    if let Ok(base) = url::Url::parse(base_url)
+        && let Ok(resolved) = base.join(href)
+    {
+        return resolved.to_string();
     }
     href.to_owned()
 }
@@ -3135,7 +3136,7 @@ mod tests {
         assert!(
             elems
                 .iter()
-                .all(|e| e.as_obj().map_or(true, |o| o.key != "navigation")),
+                .all(|e| e.as_obj().is_none_or(|o| o.key != "navigation")),
             "empty nav should not emit a navigation obj: {elems:?}",
         );
     }
@@ -3194,7 +3195,7 @@ mod tests {
             elems
                 .iter()
                 .chain(elems2.iter())
-                .all(|e| e.as_obj().map_or(true, |o| !o.key.starts_with("list: ")))
+                .all(|e| e.as_obj().is_none_or(|o| !o.key.starts_with("list: ")))
         );
     }
 
@@ -3264,7 +3265,7 @@ mod tests {
         let children = &elems[0].as_obj().unwrap().children;
         let found = children
             .iter()
-            .any(|e| e.as_str().map_or(false, |s| s.starts_with("<checkbox>")));
+            .any(|e| e.as_str().is_some_and(|s| s.starts_with("<checkbox>")));
         assert!(found, "expected <checkbox> element; children: {children:?}");
     }
 
@@ -3275,7 +3276,7 @@ mod tests {
         let children = &elems[0].as_obj().unwrap().children;
         let found = children.iter().any(|e| {
             e.as_str()
-                .map_or(false, |s| s.starts_with("<checkbox checked>"))
+                .is_some_and(|s| s.starts_with("<checkbox checked>"))
         });
         assert!(found, "expected <checkbox checked>; children: {children:?}");
     }
@@ -3290,13 +3291,13 @@ mod tests {
         let form_children = &elems[0].as_obj().unwrap().children;
         let radio = form_children
             .iter()
-            .find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("<radio>")))
+            .find(|e| e.as_obj().is_some_and(|o| o.key.starts_with("<radio>")))
             .expect("expected <radio> obj for select");
         let opts = &radio.as_obj().unwrap().children;
         assert_eq!(opts.len(), 2);
         let canada = opts
             .iter()
-            .find(|e| e.as_str().map_or(false, |s| s.contains("Canada")))
+            .find(|e| e.as_str().is_some_and(|s| s.contains("Canada")))
             .expect("Canada option missing");
         assert!(
             canada.as_str().unwrap().starts_with("<checked>"),
@@ -3450,7 +3451,7 @@ mod tests {
         let form_children = &elems[0].as_obj().unwrap().children;
         let has_input = form_children
             .iter()
-            .any(|e| e.as_str().map_or(false, |s| s.contains("<input>")));
+            .any(|e| e.as_str().is_some_and(|s| s.contains("<input>")));
         assert!(
             has_input,
             "labeled input not found in form children: {form_children:?}"
@@ -3510,7 +3511,7 @@ mod tests {
         let elems = html_to_ffon(html, "");
         let form_found = elems
             .iter()
-            .any(|e| e.as_obj().map_or(false, |o| o.key == "form_1"));
+            .any(|e| e.as_obj().is_some_and(|o| o.key == "form_1"));
         assert!(
             form_found,
             "form nested inside <p> should be rendered: {elems:?}"
@@ -3522,14 +3523,14 @@ mod tests {
         let elems = html_to_ffon("<ul><li><h3>Sub</h3></li></ul>", "");
         let list = elems
             .iter()
-            .find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("list")))
+            .find(|e| e.as_obj().is_some_and(|o| o.key.starts_with("list")))
             .expect("expected list obj");
         let found = list
             .as_obj()
             .unwrap()
             .children
             .iter()
-            .any(|e| e.as_obj().map_or(false, |o| o.key.contains("Sub")));
+            .any(|e| e.as_obj().is_some_and(|o| o.key.contains("Sub")));
         assert!(
             found,
             "heading inside <li> should appear as Obj child: {list:?}"
@@ -3543,7 +3544,7 @@ mod tests {
         let elems = html_to_ffon("<ul><li>Alpha</li><li>Beta</li></ul>", "");
         let list = elems
             .iter()
-            .find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("list")))
+            .find(|e| e.as_obj().is_some_and(|o| o.key.starts_with("list")))
             .expect("expected a list obj");
         let children = &list.as_obj().unwrap().children;
         assert_eq!(children[0].as_str().unwrap(), "- Alpha");
@@ -3557,7 +3558,7 @@ mod tests {
             .iter()
             .find(|e| {
                 e.as_obj()
-                    .map_or(false, |o| o.key.starts_with("ordered list"))
+                    .is_some_and(|o| o.key.starts_with("ordered list"))
             })
             .expect("expected an ordered list obj");
         let children = &list.as_obj().unwrap().children;
@@ -3570,14 +3571,14 @@ mod tests {
         let elems = html_to_ffon(r#"<ul><li><a href="https://x.com">X</a></li></ul>"#, "");
         let list = elems
             .iter()
-            .find(|e| e.as_obj().map_or(false, |o| o.key.starts_with("list")))
+            .find(|e| e.as_obj().is_some_and(|o| o.key.starts_with("list")))
             .expect("expected a list obj");
         let children = &list.as_obj().unwrap().children;
         assert!(!children.is_empty(), "list should have at least one child");
         let found = children.iter().any(|e| {
-            e.as_obj().map_or(false, |o| {
-                o.key.contains("<link>") && o.key.contains("x.com")
-            }) || e.as_str().map_or(false, |s| s.contains("X"))
+            e.as_obj()
+                .is_some_and(|o| o.key.contains("<link>") && o.key.contains("x.com"))
+                || e.as_str().is_some_and(|s| s.contains("X"))
         });
         assert!(
             found,

@@ -33,7 +33,15 @@ pub fn set_renderer_available(available: bool) {
     if available {
         RENDERERS.fetch_add(1, Ordering::AcqRel);
     } else {
-        let _ = RENDERERS.fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1));
+        // Never below zero, and written out so it builds on any recent toolchain:
+        // `fetch_update` has just been renamed.
+        let mut n = RENDERERS.load(Ordering::Acquire);
+        while n > 0 {
+            match RENDERERS.compare_exchange_weak(n, n - 1, Ordering::AcqRel, Ordering::Acquire) {
+                Ok(_) => break,
+                Err(now) => n = now,
+            }
+        }
         if RENDERERS.load(Ordering::Acquire) == 0 {
             REQUESTS.lock().unwrap_or_else(|e| e.into_inner()).clear();
         }
@@ -91,7 +99,9 @@ pub fn take_rendered() -> Vec<(String, Vec<FfonElement>)> {
     take_rendered_where(|_| true)
 }
 
-static URL_FETCHER: OnceLock<Box<dyn Fn(&str) -> Vec<FfonElement> + Send + Sync>> = OnceLock::new();
+type UrlFetcher = Box<dyn Fn(&str) -> Vec<FfonElement> + Send + Sync>;
+
+static URL_FETCHER: OnceLock<UrlFetcher> = OnceLock::new();
 
 /// Register a URL fetch implementation.
 ///

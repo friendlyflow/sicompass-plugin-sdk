@@ -61,6 +61,12 @@ pub struct SearchResultItem {
 // Provider trait
 // ---------------------------------------------------------------------------
 
+/// What a setting's new value is handed to: its config key and the value.
+pub type ApplyCallback = Box<dyn Fn(&str, &str) + Send + 'static>;
+
+/// What fills a [`GenericProvider`], given its path.
+type FetchFn = Box<dyn Fn(&str) -> Vec<FfonElement> + Send + 'static>;
+
 /// The core provider interface — equivalent to the C `Provider` vtable.
 ///
 /// Only `name()` and `fetch()` are required. All other methods have sensible
@@ -252,7 +258,7 @@ pub trait Provider: Send + 'static {
     /// Replaces the constructor-time closure so `SettingsProvider` can be
     /// created through the factory registry and configured afterwards.
     /// Default: no-op.
-    fn set_apply_callback(&mut self, _cb: Box<dyn Fn(&str, &str) + Send + 'static>) {}
+    fn set_apply_callback(&mut self, _cb: ApplyCallback) {}
 
     /// Override the config file path (primarily for tests).
     /// Default: no-op.
@@ -692,7 +698,7 @@ pub struct GenericProvider {
     name: String,
     display_name: String,
     current_path: String,
-    fetch_fn: Box<dyn Fn(&str) -> Vec<FfonElement> + Send + 'static>,
+    fetch_fn: FetchFn,
     error: Option<String>,
 }
 

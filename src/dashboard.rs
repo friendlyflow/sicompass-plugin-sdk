@@ -188,13 +188,8 @@ impl DashboardFrame {
         if row >= self.rows {
             return;
         }
-        let mut c = col;
-        for ch in s.chars() {
-            if c >= self.cols {
-                break;
-            }
+        for (c, ch) in (col..self.cols).zip(s.chars()) {
             self.set_char(c, row, ch, fg);
-            c += 1;
         }
     }
 }

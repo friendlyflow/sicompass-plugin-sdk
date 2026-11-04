@@ -1,9 +1,9 @@
-/// Tag parsing for FFON element strings.
-///
-/// Tags are HTML-like markers embedded in string content that control rendering
-/// and interactivity. They support escaped angle brackets: `\<` → `<`.
-///
-/// Example: `"Edit this: <input>hello</input>"` is an editable field.
+//! Tag parsing for FFON element strings.
+//!
+//! Tags are HTML-like markers embedded in string content that control rendering
+//! and interactivity. They support escaped angle brackets: `\<` → `<`.
+//!
+//! Example: `"Edit this: <input>hello</input>"` is an editable field.
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -405,15 +405,15 @@ fn strip_keeping_escapes(text: &str) -> String {
 
     // 3. <src=N> / <srcins=N>: editor internal tags — strip the tag and recurse.
     for prefix in &[SRC_PREFIX, SRCINS_PREFIX] {
-        if let Some(pos) = text.find(prefix) {
-            if let Some(close) = text[pos + prefix.len()..].find(TAG_CLOSE_CHAR) {
-                let num_part = &text[pos + prefix.len()..pos + prefix.len() + close];
-                if num_part.chars().all(|c| c.is_ascii_digit()) {
-                    let before = &text[..pos];
-                    let after = &text[pos + prefix.len() + close + 1..];
-                    let result = format!("{before}{after}");
-                    return strip_keeping_escapes(&result);
-                }
+        if let Some(pos) = text.find(prefix)
+            && let Some(close) = text[pos + prefix.len()..].find(TAG_CLOSE_CHAR)
+        {
+            let num_part = &text[pos + prefix.len()..pos + prefix.len() + close];
+            if num_part.chars().all(|c| c.is_ascii_digit()) {
+                let before = &text[..pos];
+                let after = &text[pos + prefix.len() + close + 1..];
+                let result = format!("{before}{after}");
+                return strip_keeping_escapes(&result);
             }
         }
     }

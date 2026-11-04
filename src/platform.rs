@@ -11,10 +11,10 @@ use std::process::Command;
 pub fn config_home() -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
-        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-            if !xdg.is_empty() {
-                return Some(PathBuf::from(xdg));
-            }
+        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME")
+            && !xdg.is_empty()
+        {
+            return Some(PathBuf::from(xdg));
         }
         home_dir().map(|h| h.join(".config"))
     }
@@ -48,10 +48,10 @@ pub fn home_dir() -> Option<PathBuf> {
 pub fn cache_home() -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
-        if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
-            if !xdg.is_empty() {
-                return Some(PathBuf::from(xdg));
-            }
+        if let Ok(xdg) = std::env::var("XDG_CACHE_HOME")
+            && !xdg.is_empty()
+        {
+            return Some(PathBuf::from(xdg));
         }
         home_dir().map(|h| h.join(".cache"))
     }
@@ -76,10 +76,10 @@ pub fn cache_home() -> Option<PathBuf> {
 pub fn state_home() -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
-        if let Ok(xdg) = std::env::var("XDG_STATE_HOME") {
-            if !xdg.is_empty() {
-                return Some(PathBuf::from(xdg));
-            }
+        if let Ok(xdg) = std::env::var("XDG_STATE_HOME")
+            && !xdg.is_empty()
+        {
+            return Some(PathBuf::from(xdg));
         }
         home_dir().map(|h| h.join(".local").join("state"))
     }
@@ -113,10 +113,10 @@ pub fn state_home() -> Option<PathBuf> {
 pub fn data_home() -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
-        if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-            if !xdg.is_empty() {
-                return Some(PathBuf::from(xdg));
-            }
+        if let Ok(xdg) = std::env::var("XDG_DATA_HOME")
+            && !xdg.is_empty()
+        {
+            return Some(PathBuf::from(xdg));
         }
         home_dir().map(|h| h.join(".local").join("share"))
     }
@@ -733,16 +733,16 @@ pub fn resolve_repo_asset(rel: &str) -> std::path::PathBuf {
     if from_manifest.exists() {
         return from_manifest;
     }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let a = dir.join(rel);
-            if a.exists() {
-                return a;
-            }
-            let b = dir.join("..").join(rel);
-            if b.exists() {
-                return b;
-            }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let a = dir.join(rel);
+        if a.exists() {
+            return a;
+        }
+        let b = dir.join("..").join(rel);
+        if b.exists() {
+            return b;
         }
     }
     let cwd = std::path::PathBuf::from(rel);
@@ -818,10 +818,12 @@ mod tests {
     /// by the app's own release smoke test.
     #[test]
     fn app_dir_name_is_the_dev_name_under_a_debug_build() {
-        assert!(
-            cfg!(debug_assertions),
-            "tests are built with debug assertions"
-        );
+        const {
+            assert!(
+                cfg!(debug_assertions),
+                "tests are built with debug assertions"
+            )
+        };
         assert_eq!(app_dir_name(), "sicompass-dev");
     }
 

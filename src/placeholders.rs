@@ -38,7 +38,7 @@ pub fn new_obj_with_i_placeholder(key: impl Into<String>) -> FfonElement {
 /// Recursively ensure every `Obj` in `elems` has [`I_PLACEHOLDER`] as its first
 /// child so that the insert affordance is available at every nesting level.
 /// Skips Objs that already start with the placeholder (idempotent).
-pub fn seed_i_placeholders(elems: &mut Vec<FfonElement>) {
+pub fn seed_i_placeholders(elems: &mut [FfonElement]) {
     for elem in elems.iter_mut() {
         if let FfonElement::Obj(o) = elem {
             let already_seeded = o
