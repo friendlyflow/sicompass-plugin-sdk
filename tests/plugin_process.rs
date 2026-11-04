@@ -11,8 +11,18 @@ use std::time::{Duration, Instant};
 /// `target/<profile>/examples/stdio_plugin`, which `cargo test` builds; under
 /// `cargo test --test plugin_process` it is built here first.
 fn fixture() -> std::path::PathBuf {
+    // With `build.build-dir` set in a cargo config the test runs from there, while cargo
+    // still puts finished programs in the target folder.
     let exe = std::env::current_exe().unwrap();
-    let profile_dir = exe.parent().unwrap().parent().unwrap();
+    let profile = exe.parent().unwrap().parent().unwrap();
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target"));
+    let profile_dir = if exe.starts_with(&target) {
+        profile.to_path_buf()
+    } else {
+        target.join(profile.file_name().unwrap())
+    };
     let path = profile_dir.join("examples").join("stdio_plugin");
     if !path.exists() {
         let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());

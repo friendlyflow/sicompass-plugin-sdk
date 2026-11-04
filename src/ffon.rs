@@ -878,7 +878,7 @@ impl<'a> HtmlParseCtx<'a> {
 
         let prev_id = if let Some(id) = node.value().attr("id").filter(|s| !s.is_empty()) {
             let prev = self.pending_id.take();
-            self.pending_id = Some(id.to_owned());
+            self.pending_id = Some(crate::tags::escape(id));
             prev
         } else {
             None
@@ -970,7 +970,10 @@ impl<'a> HtmlParseCtx<'a> {
             "img" => {
                 let alt = node.value().attr("alt").unwrap_or("");
                 if !alt.is_empty() && alt != "image" {
-                    self.add_to_current(FfonElement::new_str(format!("{alt} [img]")));
+                    self.add_to_current(FfonElement::new_str(format!(
+                        "{} [img]",
+                        crate::tags::escape(alt)
+                    )));
                 }
             }
             "a" => {
@@ -978,6 +981,7 @@ impl<'a> HtmlParseCtx<'a> {
                     html_resolve_href(node.value().attr("href").unwrap_or(""), self.base_url);
                 let text = html_collect_text(node, self.base_url);
                 if !text.is_empty() && !href.is_empty() {
+                    let href = html_link_value(&href);
                     self.add_to_current(FfonElement::new_obj(format!(
                         "{text} <link>{href}</link>"
                     )));
@@ -1078,7 +1082,10 @@ impl<'a> HtmlParseCtx<'a> {
                         } else {
                             "<checkbox>"
                         };
-                        self.add_to_current(FfonElement::new_str(format!("{tag}{label}")));
+                        self.add_to_current(FfonElement::new_str(format!(
+                            "{tag}{}",
+                            crate::tags::escape(&label)
+                        )));
                         if form_n > 0 {
                             let css = html_input_selector(&name, &id_attr);
                             let match_index = self.next_match_index(&css);
@@ -1098,7 +1105,10 @@ impl<'a> HtmlParseCtx<'a> {
                             html_input_label(&ph, &al, &name, &id_attr, &mut self.form_input_count);
                         let label = self.disambiguate_label(base);
                         let indicator = if is_checked { "(x) " } else { "( ) " };
-                        self.add_to_current(FfonElement::new_str(format!("{indicator}{label}")));
+                        self.add_to_current(FfonElement::new_str(format!(
+                            "{indicator}{}",
+                            crate::tags::escape(&label)
+                        )));
                         if form_n > 0 && !name.is_empty() {
                             let css = html_input_selector(&name, &id_attr);
                             let match_index = self.next_match_index(&css);
@@ -1130,7 +1140,9 @@ impl<'a> HtmlParseCtx<'a> {
                             html_input_label(&ph, &al, &name, &id_attr, &mut self.form_input_count);
                         let label = self.disambiguate_label(base);
                         self.add_to_current(FfonElement::new_str(format!(
-                            "{label}: <input>{value}</input>"
+                            "{}: <input>{}</input>",
+                            crate::tags::escape(&label),
+                            crate::tags::escape(&value)
                         )));
                         // Register the field for fill/submit. Inside a form
                         // (form_n > 0) always; outside any form only when it has
@@ -1169,7 +1181,8 @@ impl<'a> HtmlParseCtx<'a> {
                 let base = html_input_label(&ph, &al, &name, &id_attr, &mut self.form_input_count);
                 let label = self.disambiguate_label(base);
                 self.add_to_current(FfonElement::new_str(format!(
-                    "{label}: <input>{content}</input>"
+                    "{}: <input>{content}</input>",
+                    crate::tags::escape(&label)
                 )));
                 if form_n > 0 {
                     let css = html_input_selector(&name, &id_attr);
@@ -1200,10 +1213,11 @@ impl<'a> HtmlParseCtx<'a> {
                 let label = self.disambiguate_label(base);
 
                 let opt_sel = scraper::Selector::parse("option").unwrap();
-                let mut radio_obj = FfonElement::new_obj(format!("<radio>{label}"));
+                let mut radio_obj =
+                    FfonElement::new_obj(format!("<radio>{}", crate::tags::escape(&label)));
                 for opt in node.select(&opt_sel) {
                     let val = opt.value().attr("value").unwrap_or("").to_owned();
-                    let text = crate::tags::escape(opt.text().collect::<String>().trim());
+                    let text = opt.text().collect::<String>().trim().to_owned();
                     let selected = opt.value().attr("selected").is_some();
                     let display = if !text.is_empty() {
                         text.clone()
@@ -1213,10 +1227,11 @@ impl<'a> HtmlParseCtx<'a> {
                     if display.is_empty() {
                         continue;
                     }
+                    let shown = crate::tags::escape(&display);
                     let entry = if selected {
-                        FfonElement::new_str(format!("<checked>{display}</checked>"))
+                        FfonElement::new_str(format!("<checked>{shown}</checked>"))
                     } else {
-                        FfonElement::new_str(display.clone())
+                        FfonElement::new_str(shown)
                     };
                     radio_obj.as_obj_mut().unwrap().push(entry);
                     if form_n > 0 {
@@ -1252,7 +1267,8 @@ impl<'a> HtmlParseCtx<'a> {
                 if matches!(btn_type.as_str(), "submit" | "button") {
                     let name = node.value().attr("name").unwrap_or("").to_owned();
                     let id_attr = node.value().attr("id").unwrap_or("").to_owned();
-                    let display = html_collect_text(node, self.base_url);
+                    // Plain here: this one is a form-map key, and the row escapes it.
+                    let display = crate::tags::unescape(&html_collect_text(node, self.base_url));
                     let display = if !display.is_empty() {
                         display
                     } else {
@@ -1356,6 +1372,7 @@ impl<'a> HtmlParseCtx<'a> {
                         let href = html_resolve_href(e.attr("href").unwrap_or(""), self.base_url);
                         let link_text = html_collect_text(elem_ref, self.base_url);
                         if !link_text.is_empty() && !href.is_empty() {
+                            let href = html_link_value(&href);
                             self.add_to_current(FfonElement::new_obj(format!(
                                 "{link_text} <link>{href}</link>"
                             )));
@@ -1443,7 +1460,8 @@ impl<'a> HtmlParseCtx<'a> {
         let fn_name = format!("submit:form_{form_n}");
         let display = self.disambiguate_label(display.to_owned());
         self.add_to_current(FfonElement::new_str(format!(
-            "<button>{fn_name}</button>{display}"
+            "<button>{fn_name}</button>{}",
+            crate::tags::escape(&display)
         )));
         if form_n > 0 {
             let css = html_submit_selector(name, id_attr);
@@ -1736,6 +1754,7 @@ fn html_collect_text(node: scraper::ElementRef, base_url: &str) -> String {
                         let href = html_resolve_href(e.attr("href").unwrap_or(""), base_url);
                         let text = html_collect_text(elem_ref, base_url);
                         if !text.is_empty() && !href.is_empty() {
+                            let href = html_link_value(&href);
                             buf.push_str(&format!("{text} <link>{href}</link>"));
                         } else if !text.is_empty() {
                             buf.push_str(&text);
@@ -1757,12 +1776,23 @@ fn html_collect_table_rows(node: scraper::ElementRef, out: &mut Vec<FfonElement>
         let cell_sel = scraper::Selector::parse("th, td").unwrap();
         let cells: Vec<String> = row
             .select(&cell_sel)
-            .map(|c| html_normalize_whitespace(&c.text().collect::<String>()))
+            .map(|c| crate::tags::escape(&html_normalize_whitespace(&c.text().collect::<String>())))
             .filter(|s| !s.is_empty())
             .collect();
         if !cells.is_empty() {
             out.push(FfonElement::new_str(cells.join(" | ")));
         }
+    }
+}
+
+/// A resolved `href` as it goes in a `<link>`. The app follows this text as it stands, so
+/// a bracket is percent-encoded rather than escaped, a backslash being part of a URL. A
+/// `#fragment` is compared with a row's `<id>` instead, and is written the same way.
+fn html_link_value(href: &str) -> String {
+    if href.starts_with('#') {
+        crate::tags::escape(href)
+    } else {
+        href.replace('<', "%3C").replace('>', "%3E")
     }
 }
 
@@ -1788,6 +1818,113 @@ pub fn html_resolve_href(href: &str, base_url: &str) -> String {
 // ---------------------------------------------------------------------------
 // Tests — port of tests/lib_ffon/
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod html_is_text_tests {
+    use super::*;
+
+    const NASTY: &str = r#"<img src="/etc/passwd"><b>x</b>"#;
+
+    fn every_string(elems: &[FfonElement], out: &mut Vec<String>) {
+        for elem in elems {
+            match elem {
+                FfonElement::Str(s) => out.push(s.clone()),
+                FfonElement::Obj(o) => {
+                    out.push(o.key.clone());
+                    every_string(&o.children, out);
+                }
+            }
+        }
+    }
+
+    /// Whatever a page writes, wherever it writes it, the row holds no tag of the page's.
+    #[test]
+    fn nothing_a_page_writes_becomes_a_tag() {
+        // In an attribute, as HTML would have to write it.
+        let a = NASTY
+            .replace('"', "&quot;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+        let t = NASTY.replace('<', "&lt;").replace('>', "&gt;");
+        let pages = [
+            format!("<table><tr><td>{t}</td><th>{t}</th></tr></table>"),
+            format!("<p><img src=\"p.png\" alt=\"{a}\"></p><img alt=\"{a}\">"),
+            format!("<div id=\"{a}\"><h2 id=\"{a}\">h</h2><ul id=\"{a}\"><li>i</li></ul></div>"),
+            format!("<dl id=\"{a}\"><dt>{t}</dt><dd>{t}</dd></dl><nav id=\"{a}\"><p>n</p></nav>"),
+            format!("<form id=\"{a}\"><input value=\"{a}\" placeholder=\"{a}\"></form>"),
+            format!(
+                "<form><input aria-label=\"{a}\"><input name=\"{a}\"><input id=\"{a}\"></form>"
+            ),
+            format!(
+                "<form><input type=checkbox name=\"{a}\"><input type=radio name=\"{a}\"></form>"
+            ),
+            format!("<form><input type=submit value=\"{a}\"><button>{t}</button></form>"),
+            format!("<form><textarea name=\"{a}\">{t}</textarea></form>"),
+            format!(
+                "<form><select name=\"{a}\"><option value=\"{a}\"></option><option>{t}</option></select></form>"
+            ),
+            format!("<p>{t}</p><pre>{t}</pre><h1>{t}</h1><span>{t}</span><div>{t}</div>"),
+            format!(
+                "<a href=\"#{a}\">go</a><a href=\"https://x.test/{a}\">{t}</a><p><a href=\"/{a}\">in</a></p>"
+            ),
+        ];
+        for page in &pages {
+            let (rows, _) = html_to_ffon_with_forms(page, "https://example.test/");
+            let mut strings = Vec::new();
+            every_string(&rows, &mut strings);
+            assert!(!strings.is_empty(), "{page}");
+            for row in strings {
+                assert!(!crate::markup::has_markup(&row), "{page}\n{row}");
+                let picture = crate::markup::targets(&row).iter().any(|t| {
+                    t.kind == crate::tags::TargetKind::Image
+                        || t.kind == crate::tags::TargetKind::Video
+                });
+                assert!(!picture, "{page}\n{row}");
+                assert!(!crate::tags::has_image(&row), "{page}\n{row}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_page_s_text_reads_as_it_was_written() {
+        let t = NASTY.replace('<', "&lt;").replace('>', "&gt;");
+        let page = format!("<table><tr><td>{t}</td></tr></table>");
+        let rows = html_to_ffon(&page, "https://example.test/");
+        let FfonElement::Str(row) = &rows[0] else {
+            panic!("a cell is a row");
+        };
+        assert_eq!(crate::tags::strip_display(row), NASTY);
+    }
+
+    /// The form map is looked up with the label as the user reads it.
+    #[test]
+    fn a_form_map_key_is_plain_and_a_value_is_editable() {
+        let page = "<form><input name=\"a&lt;b\" value=\"c&lt;d\"><button>go&lt;</button>\
+                    <select name=\"s\"><option>o&lt;p</option></select></form>";
+        let (rows, map) = html_to_ffon_with_forms(page, "https://example.test/");
+        assert!(map.contains_key("form_1/a<b"), "{map:?}");
+        assert!(map.contains_key("form_1/go<"), "{map:?}");
+        assert!(map.contains_key("form_1/s/o<p"), "{map:?}");
+        let mut strings = Vec::new();
+        every_string(&rows, &mut strings);
+        let field = strings.iter().find(|s| s.contains("<input>")).unwrap();
+        assert!(crate::tags::has_input(field));
+        assert_eq!(crate::tags::extract_input(field).as_deref(), Some(r"c\<d"));
+    }
+
+    #[test]
+    fn a_bracket_in_a_link_is_encoded_so_the_link_still_works() {
+        let page = "<p><a href=\"https://x.test/a&lt;b\">go</a></p>";
+        let rows = html_to_ffon(page, "https://example.test/");
+        let mut strings = Vec::new();
+        every_string(&rows, &mut strings);
+        let link = strings.iter().find(|s| crate::tags::has_link(s)).unwrap();
+        assert_eq!(
+            crate::tags::extract_link(link).as_deref(),
+            Some("https://x.test/a%3Cb")
+        );
+    }
+}
 
 #[cfg(test)]
 mod tests {

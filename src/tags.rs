@@ -10,6 +10,11 @@
 // ---------------------------------------------------------------------------
 
 /// Like `str::find` but skips matches where `<` is preceded by `\`.
+///
+/// For an opening tag only. [`escape`] writes both brackets, so a literal closing tag is
+/// `\</input\>`, which a search for `</input>` never finds. `\</input>` is a value that
+/// ends in a backslash, then its closing tag, so closing tags are searched for plainly,
+/// as `extract_input` always did.
 fn find_unescaped(haystack: &str, needle: &str) -> Option<usize> {
     let bytes = haystack.as_bytes();
     let needle_bytes = needle.as_bytes();
@@ -35,8 +40,8 @@ fn find_unescaped(haystack: &str, needle: &str) -> Option<usize> {
     None
 }
 
-/// Replace `\<` → `<` and `\>` → `>` in place.
-fn unescape(s: &str) -> String {
+/// Undo [`escape`]: `\<` → `<` and `\>` → `>`. Safe on text that was never escaped.
+pub fn unescape(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
@@ -116,7 +121,7 @@ const ONE_OPT_TAG: &str = "<one-opt></one-opt>";
 
 /// Returns true if `text` contains `<input>...</input>`.
 pub fn has_input(text: &str) -> bool {
-    find_unescaped(text, INPUT_OPEN).is_some() && find_unescaped(text, INPUT_CLOSE).is_some()
+    find_unescaped(text, INPUT_OPEN).is_some() && text.contains(INPUT_CLOSE)
 }
 
 /// Extracts content between `<input>` and `</input>`.
@@ -141,7 +146,7 @@ pub fn format_input(content: &str) -> String {
 
 /// Returns true if `text` contains `<password>...</password>`.
 pub fn has_password(text: &str) -> bool {
-    find_unescaped(text, PASSWORD_OPEN).is_some() && find_unescaped(text, PASSWORD_CLOSE).is_some()
+    find_unescaped(text, PASSWORD_OPEN).is_some() && text.contains(PASSWORD_CLOSE)
 }
 
 /// Extracts content between `<password>` and `</password>`.
@@ -229,7 +234,7 @@ pub fn format_checkbox_checked(content: &str) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn has_link(text: &str) -> bool {
-    find_unescaped(text, LINK_OPEN).is_some() && find_unescaped(text, LINK_CLOSE).is_some()
+    find_unescaped(text, LINK_OPEN).is_some() && text.contains(LINK_CLOSE)
 }
 
 pub fn extract_link(text: &str) -> Option<String> {
@@ -241,7 +246,7 @@ pub fn extract_link(text: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 pub fn has_image(text: &str) -> bool {
-    find_unescaped(text, IMAGE_OPEN).is_some() && find_unescaped(text, IMAGE_CLOSE).is_some()
+    find_unescaped(text, IMAGE_OPEN).is_some() && text.contains(IMAGE_CLOSE)
 }
 
 pub fn extract_image(text: &str) -> Option<String> {
@@ -254,7 +259,7 @@ pub fn extract_image(text: &str) -> Option<String> {
 
 /// Returns true if `text` contains `<id>...</id>` (HTML element id metadata).
 pub fn has_id(text: &str) -> bool {
-    find_unescaped(text, ID_OPEN).is_some() && find_unescaped(text, ID_CLOSE).is_some()
+    find_unescaped(text, ID_OPEN).is_some() && text.contains(ID_CLOSE)
 }
 
 /// Extracts the id value between `<id>` and `</id>`.
@@ -349,7 +354,7 @@ pub fn format_one_opt(key: &str) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn has_button(text: &str) -> bool {
-    find_unescaped(text, BUTTON_OPEN).is_some() && find_unescaped(text, BUTTON_CLOSE).is_some()
+    find_unescaped(text, BUTTON_OPEN).is_some() && text.contains(BUTTON_CLOSE)
 }
 
 pub fn extract_button_function_name(text: &str) -> Option<String> {
@@ -369,12 +374,18 @@ pub fn extract_button_display_text(text: &str) -> Option<String> {
 ///
 /// Mirrors `providerTagStripDisplay` in `tags.c`.
 pub fn strip_display(text: &str) -> String {
+    unescape(&strip_keeping_escapes(text))
+}
+
+/// The tags gone, the escapes kept. Unescaping only once, at the very end, is what stops
+/// text that merely looks like a tag being read as one on the next pass.
+fn strip_keeping_escapes(text: &str) -> String {
     // 1. Strip opt-tag prefixes recursively
     if has_one_opt(text) {
-        return strip_display(strip_one_opt(text));
+        return strip_keeping_escapes(strip_one_opt(text));
     }
     if has_many_opt(text) {
-        return strip_display(strip_many_opt(text));
+        return strip_keeping_escapes(strip_many_opt(text));
     }
 
     // 2. Button: keep text before <button> + display text after </button>,
@@ -384,12 +395,12 @@ pub fn strip_display(text: &str) -> String {
         if let Some(btn_close) = text[btn_open..].find(BUTTON_CLOSE) {
             let display_start = btn_open + btn_close + BUTTON_CLOSE.len();
             let result = format!("{}{}", before, &text[display_start..]);
-            return strip_display(&unescape(&result));
+            return strip_keeping_escapes(&result);
         }
         // Fallback: extract display text
         return extract_button_display_text(text)
-            .map(|s| strip_display(&unescape(&s)))
-            .unwrap_or_else(|| unescape(text));
+            .map(|s| strip_keeping_escapes(&s))
+            .unwrap_or_else(|| text.to_owned());
     }
 
     // 3. <src=N> / <srcins=N>: editor internal tags — strip the tag and recurse.
@@ -401,7 +412,7 @@ pub fn strip_display(text: &str) -> String {
                     let before = &text[..pos];
                     let after = &text[pos + prefix.len() + close + 1..];
                     let result = format!("{before}{after}");
-                    return strip_display(&result);
+                    return strip_keeping_escapes(&result);
                 }
             }
         }
@@ -413,7 +424,7 @@ pub fn strip_display(text: &str) -> String {
             let before = &text[..pos];
             let after = &text[pos + marker.len()..];
             let result = format!("{before}{after}");
-            return strip_display(&result);
+            return strip_keeping_escapes(&result);
         }
     }
 
@@ -426,7 +437,7 @@ pub fn strip_display(text: &str) -> String {
             .map(|p| &after_open[p + ID_CLOSE.len()..])
             .unwrap_or("");
         let result = format!("{before}{after}");
-        return strip_display(&unescape(&result));
+        return strip_keeping_escapes(&result);
     }
 
     // 5. Find the first recognized tag pair and strip it
@@ -462,12 +473,11 @@ pub fn strip_display(text: &str) -> String {
             // Recurse so nested / sibling tag pairs are all stripped — e.g. a
             // `+iR` key `<radio>prompt<input>v</input></radio>` needs both the
             // <radio> and <input> pairs removed, not just the first found.
-            return strip_display(&result);
+            return strip_keeping_escapes(&result);
         }
     }
 
-    // No tags found — just unescape
-    unescape(text)
+    text.to_owned()
 }
 
 /// Remove every `<...>` tag token from `text`, leaving plain display text.
@@ -760,6 +770,48 @@ mod tests {
         );
         assert_eq!(strip_display(text), "Yes please No thanks");
         assert_eq!(spans(text), ["Yes please", "No thanks"]);
+    }
+
+    /// A value that ends in a backslash is still that field. Every text line that ends
+    /// in one, and the Windows drive row `C:\`, used to stop being editable.
+    #[test]
+    fn a_value_ending_in_a_backslash_is_still_its_tag() {
+        let value = escape(r"C:\");
+        let row = format_input(&value);
+        assert!(has_input(&row));
+        assert_eq!(strip_display(&row), r"C:\");
+        assert_eq!(extract_input(&row).as_deref(), Some(r"C:\"));
+        assert!(has_link(r"<link>u\</link>"));
+        assert!(has_image(r"<image>u\</image>"));
+        assert!(has_id(r"<id>u\</id>"));
+        assert!(has_password(r"<password>u\</password>"));
+        let button = r"<button>run\</button>label";
+        assert!(has_button(button));
+        assert_eq!(strip_display(button), "label");
+    }
+
+    /// Text that looks like a tag stays text. It used to be read on the second pass, on
+    /// any row with a button or an id.
+    #[test]
+    fn escaped_text_is_never_read_as_a_tag_later() {
+        for nasty in [
+            "<input>y</input>",
+            "<button>go</button>",
+            "<id>x</id>",
+            r"a\<b",
+        ] {
+            let text = escape(nasty);
+            assert_eq!(strip_display(&format!("<button>f</button>{text}")), nasty);
+            assert_eq!(strip_display(&format!("<id>x</id>{text}")), nasty);
+            assert_eq!(strip_display(&format!("<input>{text}</input>")), nasty);
+        }
+    }
+
+    #[test]
+    fn unescape_undoes_escape() {
+        for text in ["<b>x</b>", r"a\<b", r"C:\", "plain", r"\\"] {
+            assert_eq!(unescape(&escape(text)), text);
+        }
     }
 
     #[test]

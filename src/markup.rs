@@ -205,8 +205,12 @@ pub fn parse(text: &str) -> Vec<Node> {
 
     let mut rest = text;
     while let Some(at) = rest.find('<') {
+        // Only an opening tag can be escaped by the backslash before it: a literal
+        // closing tag is `\</b\>`, which is no tag at all, and `\</b>` is text that ends
+        // in a backslash.
         let escaped = rest[..at].ends_with('\\');
-        let token = if escaped { None } else { read_tag(&rest[at..]) };
+        let token =
+            read_tag(&rest[at..]).filter(|t| !escaped || matches!(t, TagToken::Close { .. }));
         match token {
             Some(TagToken::Open {
                 tag,
@@ -694,6 +698,20 @@ mod tests {
         assert_eq!(plain("1 < 2 and 3 > 2"), "1 < 2 and 3 > 2");
         assert_eq!(plain("a <"), "a <");
         assert!(!has_markup("<blink>b</blink>"));
+    }
+
+    #[test]
+    fn text_ending_in_a_backslash_still_closes_its_tag() {
+        let row = format!("<p>{}</p><b>y</b>", tags::escape(r"x\"));
+        let nodes = parse(&row);
+        assert_eq!(nodes.len(), 2, "{nodes:?}");
+        assert_eq!(tags::strip_display(&plain(&row)), r"x\y");
+        let literal = tags::escape("</p>");
+        assert_eq!(parse(&format!("<p>{literal}</p>")).len(), 1);
+        assert_eq!(
+            tags::strip_display(&plain(&format!("<p>{literal}</p>"))),
+            "</p>"
+        );
     }
 
     #[test]
