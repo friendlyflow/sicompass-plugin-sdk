@@ -514,7 +514,7 @@ pub enum TargetKind {
     Video,
 }
 
-/// One image, link or button in a row, which navigate mode can stop on.
+/// One image, link or button in a row, which in element mode can stop on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
     pub kind: TargetKind,
