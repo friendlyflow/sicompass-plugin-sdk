@@ -88,6 +88,10 @@ pub struct PluginManifest {
     /// running app is older, the plugin is skipped at load time.
     #[serde(default)]
     pub min_app_version: Option<String>,
+    /// Its rows hold HTML-named tags and `<style>` rows ([`crate::markup`]). Saying so
+    /// makes it the plugin's job to escape whatever it did not write itself.
+    #[serde(default)]
+    pub markup: bool,
     /// Base64-encoded ed25519 public key. Trust root for verifying
     /// signatures on future updates. First-install is trust-on-first-use.
     #[serde(default)]

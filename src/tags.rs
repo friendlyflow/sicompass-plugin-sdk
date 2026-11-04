@@ -500,9 +500,375 @@ pub fn strip_tags(text: &str) -> String {
 // Tests — port of tests/lib_provider/test_provider_tags.c (93 tests)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Targets: the images, links and buttons in one row
+// ---------------------------------------------------------------------------
+
+/// What kind of thing a [`Target`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TargetKind {
+    Link,
+    Image,
+    Button,
+    /// `<video>`, which only exists in markup: see [`crate::markup::targets`].
+    Video,
+}
+
+/// One image, link or button in a row, which navigate mode can stop on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Target {
+    pub kind: TargetKind,
+    /// The URL, the image's or video's path, or the button's function name.
+    pub value: String,
+    /// What to call it aloud: a link's or image's text before it, a button's own.
+    pub name: String,
+    /// Where it is in `strip_display(text)`, in characters.
+    pub display_span: std::ops::Range<usize>,
+}
+
+/// How many of each kind of [`Target`] a row holds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TargetCounts {
+    pub links: usize,
+    pub images: usize,
+    pub buttons: usize,
+    pub videos: usize,
+}
+
+impl TargetCounts {
+    pub fn total(&self) -> usize {
+        self.links + self.images + self.buttons + self.videos
+    }
+}
+
+/// The next target's opening tag in `text`, as (byte offset, kind).
+fn next_target_tag(text: &str) -> Option<(usize, TargetKind)> {
+    [
+        (LINK_OPEN, TargetKind::Link),
+        (IMAGE_OPEN, TargetKind::Image),
+        (BUTTON_OPEN, TargetKind::Button),
+    ]
+    .into_iter()
+    .filter_map(|(open, kind)| find_unescaped(text, open).map(|at| (at, kind)))
+    .min_by_key(|&(at, _)| at)
+}
+
+fn target_tags(kind: TargetKind) -> (&'static str, &'static str) {
+    match kind {
+        TargetKind::Link => (LINK_OPEN, LINK_CLOSE),
+        TargetKind::Image => (IMAGE_OPEN, IMAGE_CLOSE),
+        TargetKind::Button => (BUTTON_OPEN, BUTTON_CLOSE),
+        TargetKind::Video => unreachable!("next_target_tag never finds a video"),
+    }
+}
+
+/// What one stretch of a row, cut between two targets, shows. A wrapping tag can
+/// open in one stretch and close in another, and on its own that closing tag would
+/// read as text, because [`strip_display`] only removes tags it finds both ends of.
+fn stretch_display(stretch: &str) -> String {
+    let mut text = stretch.to_owned();
+    for (opens, close) in [
+        (&[CHECKBOX_OPEN, CHECKBOX_CHECKED_OPEN][..], CHECKBOX_CLOSE),
+        (&[RADIO_OPEN][..], RADIO_CLOSE),
+        (&[CHECKED_OPEN][..], CHECKED_CLOSE),
+        (&[INPUT_OPEN][..], INPUT_CLOSE),
+        (&[PASSWORD_OPEN][..], PASSWORD_CLOSE),
+    ] {
+        let opened = opens
+            .iter()
+            .any(|open| find_unescaped(&text, open).is_some());
+        if !opened {
+            while let Some(at) = find_unescaped(&text, close) {
+                text.replace_range(at..at + close.len(), "");
+            }
+        }
+    }
+    strip_display(&text)
+}
+
+/// Count a row's targets without working out where they are. Cheap enough to ask
+/// about the focused row every frame, however long the row is.
+pub fn target_counts(text: &str) -> TargetCounts {
+    let mut counts = TargetCounts::default();
+    let mut rest = text;
+    while let Some((at, kind)) = next_target_tag(rest) {
+        let (open, close) = target_tags(kind);
+        let after_open = &rest[at + open.len()..];
+        let Some(end) = after_open.find(close) else {
+            break;
+        };
+        match kind {
+            TargetKind::Link => counts.links += 1,
+            TargetKind::Image => counts.images += 1,
+            TargetKind::Button => counts.buttons += 1,
+            TargetKind::Video => counts.videos += 1,
+        }
+        rest = &after_open[end + close.len()..];
+    }
+    counts
+}
+
+/// Every image, link and button in a row, in reading order. A tag with no closing
+/// tag ends the list.
+///
+/// The extractors above (`extract_link` and friends) read only the first of a kind.
+/// Each stretch is measured with [`strip_display`], so the spans agree with what the
+/// row shows, and only one stretch at a time, so a row of a thousand photos stays
+/// linear.
+pub fn targets(text: &str) -> Vec<Target> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    // Characters of the display text before `rest`.
+    let mut shown = 0;
+    while let Some((at, kind)) = next_target_tag(rest) {
+        let (open, close) = target_tags(kind);
+        let content_start = at + open.len();
+        let Some(content_len) = rest[content_start..].find(close) else {
+            break;
+        };
+        let value = &rest[content_start..content_start + content_len];
+        let after_tag = content_start + content_len + close.len();
+
+        let before = stretch_display(&rest[..at]);
+        let leading = before.chars().take_while(|c| c.is_whitespace()).count();
+        let text_before = before.trim();
+        let text_start = shown + leading;
+        shown += before.chars().count();
+
+        match kind {
+            TargetKind::Button => {
+                // A button's label is the text after it, up to the next target.
+                let tail = &rest[after_tag..];
+                let label_end = next_target_tag(tail).map_or(tail.len(), |(next, _)| next);
+                let label = stretch_display(&tail[..label_end]);
+                let label_leading = label.chars().take_while(|c| c.is_whitespace()).count();
+                let name = label.trim();
+                let start = shown + label_leading;
+                out.push(Target {
+                    kind,
+                    value: value.to_owned(),
+                    name: if name.is_empty() { value } else { name }.to_owned(),
+                    display_span: start..start + name.chars().count(),
+                });
+                shown += label.chars().count();
+                rest = &tail[label_end..];
+            }
+            TargetKind::Video => unreachable!("next_target_tag never finds a video"),
+            TargetKind::Link | TargetKind::Image => {
+                let len = strip_display(&rest[at..after_tag]).chars().count();
+                let (name, start) = match (kind, text_before.is_empty()) {
+                    (TargetKind::Link, false) => (text_before.to_owned(), text_start),
+                    (TargetKind::Link, true) => (value.to_owned(), shown),
+                    (_, false) => (text_before.to_owned(), shown),
+                    (_, true) => (
+                        std::path::Path::new(value)
+                            .file_name()
+                            .map_or(value.into(), |n| n.to_string_lossy())
+                            .into_owned(),
+                        shown,
+                    ),
+                };
+                out.push(Target {
+                    kind,
+                    value: value.to_owned(),
+                    name,
+                    display_span: start..shown + len,
+                });
+                shown += len;
+                rest = &rest[after_tag..];
+            }
+        }
+    }
+    out
+}
+
+/// Escape `<` and `>` so the tag parser cannot see a tag in `text`. For anything a
+/// user or the outside world wrote: a file name, a web page's text. It still reads
+/// as what they wrote, because [`strip_display`] undoes this for display.
+pub fn escape(text: &str) -> String {
+    if !text.contains(['<', '>']) {
+        return text.to_owned();
+    }
+    let mut out = String::with_capacity(text.len() + 8);
+    for c in text.chars() {
+        if matches!(c, '<' | '>') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn spans(text: &str) -> Vec<String> {
+        let shown: Vec<char> = strip_display(text).chars().collect();
+        targets(text)
+            .iter()
+            .map(|t| shown[t.display_span.clone()].iter().collect())
+            .collect()
+    }
+
+    #[test]
+    fn a_row_with_no_targets_has_none() {
+        assert!(targets("plain <input>x</input>").is_empty());
+        assert_eq!(target_counts("plain <input>x</input>").total(), 0);
+    }
+
+    #[test]
+    fn every_link_in_a_row_is_found_in_order() {
+        let text =
+            "See Home <link>https://x.org/home</link> and About <link>https://x.org/about</link>";
+        let found = targets(text);
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].kind, TargetKind::Link);
+        assert_eq!(found[0].value, "https://x.org/home");
+        assert_eq!(found[0].name, "See Home");
+        assert_eq!(found[1].value, "https://x.org/about");
+        assert_eq!(found[1].name, "and About");
+    }
+
+    /// The highlight covers a link's text and its address, which is what shows.
+    #[test]
+    fn a_links_span_covers_its_text_and_address() {
+        let text = "See Home <link>u1</link> and About <link>u2</link>";
+        assert_eq!(strip_display(text), "See Home u1 and About u2");
+        assert_eq!(spans(text), ["See Home u1", "and About u2"]);
+    }
+
+    #[test]
+    fn a_link_with_no_text_is_called_by_its_address() {
+        let found = targets("<link>https://x.org</link>");
+        assert_eq!(found[0].name, "https://x.org");
+        assert_eq!(spans("<link>https://x.org</link>"), ["https://x.org"]);
+    }
+
+    #[test]
+    fn every_button_keeps_its_own_label() {
+        let text = "<button>yes</button>Yes please <button>no</button>No thanks";
+        let found = targets(text);
+        assert_eq!(found.len(), 2);
+        assert_eq!(
+            (found[0].value.as_str(), found[0].name.as_str()),
+            ("yes", "Yes please")
+        );
+        assert_eq!(
+            (found[1].value.as_str(), found[1].name.as_str()),
+            ("no", "No thanks")
+        );
+        assert_eq!(strip_display(text), "Yes please No thanks");
+        assert_eq!(spans(text), ["Yes please", "No thanks"]);
+    }
+
+    #[test]
+    fn a_button_with_no_label_is_called_by_its_function() {
+        assert_eq!(targets("<button>save</button>")[0].name, "save");
+    }
+
+    #[test]
+    fn an_image_is_called_by_its_caption_or_its_file_name() {
+        let found = targets("A cat <image>/p/cat.jpg</image><image>/p/dog.jpg</image>");
+        assert_eq!(found[0].name, "A cat");
+        assert_eq!(found[1].name, "dog.jpg");
+        assert_eq!(found[1].value, "/p/dog.jpg");
+    }
+
+    /// The span of an image is its path alone, not the caption before it.
+    #[test]
+    fn an_images_span_is_its_path() {
+        assert_eq!(spans("A cat <image>c.jpg</image>"), ["c.jpg"]);
+    }
+
+    #[test]
+    fn different_kinds_come_in_reading_order() {
+        let text = "<button>b</button>Go <image>a.jpg</image> x <link>u</link>";
+        let kinds: Vec<TargetKind> = targets(text).iter().map(|t| t.kind).collect();
+        assert_eq!(
+            kinds,
+            [TargetKind::Button, TargetKind::Image, TargetKind::Link]
+        );
+        assert_eq!(
+            target_counts(text),
+            TargetCounts {
+                links: 1,
+                images: 1,
+                buttons: 1,
+                videos: 0
+            }
+        );
+    }
+
+    /// Other tags in the row take up no room in what is shown, so spans must skip them.
+    #[test]
+    fn spans_agree_with_the_display_around_other_tags() {
+        let text = "<checkbox>Pick <link>u1</link></checkbox> then <link>u2</link>";
+        assert_eq!(strip_display(text), "Pick u1 then u2");
+        assert_eq!(spans(text), ["Pick u1", "then u2"]);
+    }
+
+    /// Characters, not bytes.
+    #[test]
+    fn spans_count_characters() {
+        assert_eq!(
+            spans("café <link>u1</link> thé <link>u2</link>"),
+            ["café u1", "thé u2"]
+        );
+    }
+
+    #[test]
+    fn an_escaped_tag_is_not_a_target() {
+        let text = r"\<link\>u\</link\> and <link>real</link>";
+        let found = targets(text);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].value, "real");
+        assert_eq!(target_counts(text).links, 1);
+    }
+
+    #[test]
+    fn an_unclosed_tag_ends_the_list() {
+        let text = "<link>a</link> <link>never closed";
+        assert_eq!(targets(text).len(), 1);
+        assert_eq!(target_counts(text).links, 1);
+    }
+
+    #[test]
+    fn counting_agrees_with_listing() {
+        for text in [
+            "",
+            "<image>a</image><image>b</image><image>c</image>",
+            "<button>a</button>A<link>b</link>",
+            "x <link>a</link> y <link>b</link> z",
+        ] {
+            let found = targets(text);
+            let by = |k| found.iter().filter(|t| t.kind == k).count();
+            assert_eq!(
+                target_counts(text),
+                TargetCounts {
+                    links: by(TargetKind::Link),
+                    images: by(TargetKind::Image),
+                    buttons: by(TargetKind::Button),
+                    videos: 0,
+                },
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn escape_makes_tags_inert_and_still_reads_the_same() {
+        let raw = "<b>x</b> <button>go</button>Now <link>u</link>";
+        let escaped = escape(raw);
+        assert!(targets(&escaped).is_empty());
+        assert!(!has_button(&escaped));
+        assert_eq!(strip_display(&escaped), raw);
+    }
+
+    #[test]
+    fn escape_leaves_plain_text_alone() {
+        assert_eq!(escape("plain text"), "plain text");
+    }
 
     // --- has_input ---
 

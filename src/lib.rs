@@ -71,6 +71,7 @@ pub mod license;
 // definition.
 #[cfg(feature = "host")]
 pub mod manifest;
+pub mod markup;
 // Host config paths, `atomic_write`, and app launching via `Command`.
 #[cfg(feature = "host")]
 pub mod platform;

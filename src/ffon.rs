@@ -962,7 +962,7 @@ impl<'a> HtmlParseCtx<'a> {
             }
             "pre" | "code" => {
                 let text = node.text().collect::<String>();
-                let trimmed = text.trim().to_owned();
+                let trimmed = crate::tags::escape(text.trim());
                 if !trimmed.is_empty() {
                     self.add_to_current(FfonElement::new_str(trimmed));
                 }
@@ -1164,7 +1164,7 @@ impl<'a> HtmlParseCtx<'a> {
                 let id_attr = node.value().attr("id").unwrap_or("").to_owned();
                 let ph = node.value().attr("placeholder").unwrap_or("").to_owned();
                 let al = node.value().attr("aria-label").unwrap_or("").to_owned();
-                let content = node.text().collect::<String>().trim().to_owned();
+                let content = crate::tags::escape(node.text().collect::<String>().trim());
                 let form_n = self.current_form_idx;
                 let base = html_input_label(&ph, &al, &name, &id_attr, &mut self.form_input_count);
                 let label = self.disambiguate_label(base);
@@ -1203,7 +1203,7 @@ impl<'a> HtmlParseCtx<'a> {
                 let mut radio_obj = FfonElement::new_obj(format!("<radio>{label}"));
                 for opt in node.select(&opt_sel) {
                     let val = opt.value().attr("value").unwrap_or("").to_owned();
-                    let text = opt.text().collect::<String>().trim().to_owned();
+                    let text = crate::tags::escape(opt.text().collect::<String>().trim());
                     let selected = opt.value().attr("selected").is_some();
                     let display = if !text.is_empty() {
                         text.clone()
@@ -1326,7 +1326,7 @@ impl<'a> HtmlParseCtx<'a> {
         let mut text_buf = String::new();
         for child in node.children() {
             match child.value() {
-                Node::Text(t) => text_buf.push_str(t),
+                Node::Text(t) => text_buf.push_str(&crate::tags::escape(t)),
                 Node::Element(e) => {
                     let Some(elem_ref) = scraper::ElementRef::wrap(child) else {
                         continue;
@@ -1723,7 +1723,7 @@ fn html_collect_text(node: scraper::ElementRef, base_url: &str) -> String {
     let mut buf = String::new();
     for child in node.children() {
         match child.value() {
-            Node::Text(t) => buf.push_str(t),
+            Node::Text(t) => buf.push_str(&crate::tags::escape(t)),
             Node::Element(e) => {
                 if let Some(elem_ref) = scraper::ElementRef::wrap(child) {
                     let name = e.name();
@@ -2873,6 +2873,27 @@ mod tests {
     fn html_fragment_without_body() {
         let elems = html_to_ffon("<p>Fragment</p>", "");
         assert!(!elems.is_empty());
+    }
+
+    /// A page showing the text `<input>` must not become a field, and one showing
+    /// `<style>` must not become a stylesheet.
+    #[test]
+    fn html_text_that_looks_like_a_tag_stays_text() {
+        let elems = html_to_ffon(
+            "<p>&lt;input&gt;secret&lt;/input&gt; &lt;style&gt;x&lt;/style&gt;</p>",
+            "",
+        );
+        let joined = format!("{elems:?}");
+        let row = elems
+            .iter()
+            .find_map(|e| e.as_str())
+            .unwrap_or_else(|| panic!("a row in {joined}"));
+        assert!(!crate::tags::has_input(row), "{row}");
+        assert!(crate::markup::style_sheet(row).is_none());
+        assert_eq!(
+            crate::tags::strip_display(row),
+            "<input>secret</input> <style>x</style>"
+        );
     }
 
     #[test]

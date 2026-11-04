@@ -415,6 +415,16 @@ pub trait Provider: Send + 'static {
         false
     }
 
+    // ---- Optional: markup --------------------------------------------------
+
+    /// Whether this provider's rows hold HTML-named tags and `<style>` rows (see
+    /// [`crate::markup`]). Off by default, because most rows show text nobody wrote as
+    /// markup. Saying yes makes it this provider's job to [`crate::tags::escape`]
+    /// anything it did not write itself.
+    fn markup(&self) -> bool {
+        false
+    }
+
     // ---- Optional: metadata ------------------------------------------------
 
     /// Path to a dashboard image shown fullscreen via `d` key. Used when
