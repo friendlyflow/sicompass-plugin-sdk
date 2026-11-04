@@ -193,44 +193,45 @@ pub fn plain(text: &str) -> String {
     out
 }
 
-fn push_targets(nodes: &[Node], shown: &mut usize, out: &mut Vec<Target>) {
+/// The row as one string for [`tags::targets`], with a `<video>` written as an
+/// `<image>`, which shows the same way. `is_video` says, for each image in order,
+/// which of them was one.
+fn flatten(nodes: &[Node], out: &mut String, is_video: &mut Vec<bool>) {
     for node in nodes {
         match node {
             Node::Text(text) => {
-                out.extend(tags::targets(text).into_iter().map(|mut target| {
-                    target.display_span =
-                        target.display_span.start + *shown..target.display_span.end + *shown;
-                    target
-                }));
-                *shown += tags::strip_display(text).chars().count();
+                out.push_str(text);
+                is_video.extend(std::iter::repeat_n(false, tags::target_counts(text).images));
             }
             Node::Element(element) if element.tag == "video" => {
                 let mut path = String::new();
                 push_plain(&element.children, &mut path);
-                let path = path.trim().to_owned();
-                let len = tags::strip_display(&path).chars().count();
-                let name = std::path::Path::new(&path)
-                    .file_name()
-                    .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
-                out.push(Target {
-                    kind: TargetKind::Video,
-                    value: path,
-                    name,
-                    display_span: *shown..*shown + len,
-                });
-                *shown += len;
+                out.push_str(&format!("<image>{}</image>", path.trim()));
+                is_video.push(true);
             }
-            Node::Element(element) => push_targets(&element.children, shown, out),
+            Node::Element(element) => flatten(&element.children, out, is_video),
         }
     }
 }
 
 /// Every image, link, button and video in a row of markup, in reading order, with
 /// spans in what [`plain`] shows. [`tags::targets`] does this for a row with no markup.
+///
+/// Through one flat string, because a link's name is the text before it, and that text
+/// can run through tags: `Read <b>this</b> <link>u</link>` is one link called
+/// `Read this`.
 pub fn targets(text: &str) -> Vec<Target> {
-    let mut out = Vec::new();
-    push_targets(&parse(text), &mut 0, &mut out);
-    out
+    let mut flat = String::with_capacity(text.len());
+    let mut is_video = Vec::new();
+    flatten(&parse(text), &mut flat, &mut is_video);
+    let mut images = is_video.into_iter();
+    let mut found = tags::targets(&flat);
+    for target in &mut found {
+        if target.kind == TargetKind::Image && images.next() == Some(true) {
+            target.kind = TargetKind::Video;
+        }
+    }
+    found
 }
 
 /// How many of each a row of markup holds, cheap enough to ask every frame.
@@ -422,6 +423,14 @@ mod tests {
         assert_eq!(style_sheet("see <style>x</style>"), None);
         assert_eq!(style_sheet("<style>x"), None);
         assert_eq!(style_sheet(r"\<style\>x\</style\>"), None);
+    }
+
+    /// A link is called by the text before it, even through a tag.
+    #[test]
+    fn a_links_name_runs_through_tags() {
+        let found = targets("<div>One <link>u1</link> <b>Two</b> <link>u2</link></div>");
+        assert_eq!(found[0].name, "One");
+        assert_eq!(found[1].name, "Two");
     }
 
     #[test]
