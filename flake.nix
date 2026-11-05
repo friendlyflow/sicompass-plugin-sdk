@@ -4,11 +4,6 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-    # Intel macOS only: nixpkgs 26.11 throws on `import` for x86_64-darwin, so
-    # it is built from the last branch that carries it (supported to the end of
-    # 2026). Retire this input, and the system below, when that runs out.
-    nixpkgs-x86-darwin.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
-
     # The Rust toolchain. rust-overlay provides an upstream toolchain with any
     # set of targets (a plugin's static musl build among them); flake.lock pins
     # which one, so it moves only on `nix flake update`.
@@ -18,21 +13,17 @@
     };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-x86-darwin, rust-overlay }:
+  outputs = { self, nixpkgs, rust-overlay }:
     let
       supportedSystems = [
         "aarch64-linux"
         "aarch64-darwin"
         "x86_64-linux"
-        "x86_64-darwin"
       ];
-
-      nixpkgsInputFor = system:
-        if system == "x86_64-darwin" then nixpkgs-x86-darwin else nixpkgs;
 
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
       nixpkgsFor = forAllSystems (system:
-        import (nixpkgsInputFor system) {
+        import nixpkgs {
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         });

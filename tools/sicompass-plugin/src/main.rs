@@ -206,7 +206,6 @@ fn pack(dir: &Path, out: &Path, bins: &[String]) -> Result<(), String> {
 /// caught when packing rather than when nobody can install the release.
 const KNOWN_TARGETS: &[&str] = &[
     "aarch64-apple-darwin",
-    "x86_64-apple-darwin",
     "x86_64-unknown-linux-musl",
     "aarch64-unknown-linux-musl",
     "x86_64-pc-windows-msvc",

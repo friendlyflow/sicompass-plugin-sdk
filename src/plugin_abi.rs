@@ -56,8 +56,6 @@ pub fn process_abi_compatible(abi: &str) -> bool {
 pub fn plugin_target() -> Option<&'static str> {
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         Some("aarch64-apple-darwin")
-    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
-        Some("x86_64-apple-darwin")
     } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         Some("x86_64-unknown-linux-musl")
     } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
