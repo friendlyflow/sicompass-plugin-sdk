@@ -410,177 +410,52 @@ fn write_element_binary(elem: &FfonElement, layer: u32, buf: &mut Vec<u8>) {
     }
 }
 
+/// Decodes [`serialize_binary`]'s bytes in one pass, straight into the tree.
+///
+/// Input that stops partway through a node keeps every whole node before it.
+/// Content that is not UTF-8 becomes an empty string. A node deeper than one
+/// below the open object it follows still goes into that object.
 pub fn deserialize_binary(data: &[u8]) -> Vec<FfonElement> {
-    // First pass: parse all flat entries
-    struct Entry {
-        layer: u32,
-        content: Vec<u8>,
-        is_key: bool,
-    }
-
-    let mut entries: Vec<Entry> = Vec::new();
-    let mut pos = 0;
-    while pos + 8 <= data.len() {
-        let layer = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
-        let content_len =
-            u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]])
-                as usize;
-        pos += 8;
-        if pos + content_len > data.len() {
-            break;
+    fn attach(elem: FfonElement, open: &mut [(u32, FfonObject)], result: &mut Vec<FfonElement>) {
+        match open.last_mut() {
+            Some((_, parent)) => parent.children.push(elem),
+            None => result.push(elem),
         }
-        let content = data[pos..pos + content_len].to_vec();
-        pos += content_len;
-        let is_key = content.last() == Some(&b':');
-        entries.push(Entry {
-            layer,
-            content,
-            is_key,
-        });
     }
 
-    // Second pass: rebuild tree using a depth stack
+    fn text(bytes: &[u8]) -> String {
+        std::str::from_utf8(bytes).unwrap_or("").to_owned()
+    }
+
     let mut result: Vec<FfonElement> = Vec::new();
-    // Stack of (layer, mutable index into result or parent's children)
-    // We use a parallel Vec to track the element we're building at each depth.
-    // Because Rust ownership makes a mutable stack of references tricky,
-    // we use indices into a flat `nodes` vec and reconnect at the end.
-    //
-    // Simpler approach: build nodes list and then fold into tree.
-    struct Node {
-        layer: u32,
-        elem: FfonElement,
-    }
-    let mut nodes: Vec<Node> = Vec::with_capacity(entries.len());
-    for e in &entries {
-        let elem = if e.is_key {
-            let key = std::str::from_utf8(&e.content[..e.content.len() - 1])
-                .unwrap_or("")
-                .to_owned();
-            FfonElement::new_obj(key)
-        } else {
-            let s = std::str::from_utf8(&e.content).unwrap_or("").to_owned();
-            FfonElement::Str(s)
-        };
-        nodes.push(Node {
-            layer: e.layer,
-            elem,
-        });
-    }
+    // The objects still open, innermost last, each with its layer.
+    let mut open: Vec<(u32, FfonObject)> = Vec::new();
 
-    // Build tree: for each node, find its parent (last preceding node with layer == this.layer - 1)
-    // We process in reverse and use a stack.
-    // We need ownership over all elements. Collect them first, then parent them.
-    let mut elems: Vec<(u32, FfonElement)> = nodes.into_iter().map(|n| (n.layer, n.elem)).collect();
-
-    // Process from the end so we can move children into parents.
-    // Walk backward: each element at layer L is a child of the nearest preceding element at layer L-1.
-    // But we need forward order for correct child ordering. Use a forward pass with an owned stack.
-
-    // Strategy: accumulate children into parents using a stack of (layer, FfonElement).
-    let mut stack: Vec<(u32, FfonElement)> = Vec::new();
-
-    for (layer, elem) in elems.drain(..) {
-        // Pop all stack items that are at the same or deeper layer — they won't get more children.
-        // If they are children (layer > their parent's layer), they'll be attached when we pop.
-        // Actually: when we encounter an element at layer L, any stack item at layer >= L
-        // that is a child of a layer L-1 element should already be in the right parent.
-        // Let's use the simpler approach from the C code: a stack of open objects.
-
-        // Pop stack items with layer >= current layer (they are done)
-        while stack.last().is_some_and(|(l, _)| *l >= layer) {
-            let (_, child) = stack.pop().unwrap();
-            if let Some((_, FfonElement::Obj(parent_obj))) = stack.last_mut() {
-                parent_obj.children.insert(0, child); // we'll fix order below
-            } else {
-                // Root level
-                result.insert(0, child);
-            }
-        }
-
-        stack.push((layer, elem));
-    }
-
-    // Drain remaining stack
-    while let Some((_, elem)) = stack.pop() {
-        if let Some((_, FfonElement::Obj(parent_obj))) = stack.last_mut() {
-            parent_obj.children.insert(0, elem);
-        } else {
-            result.insert(0, elem);
-        }
-    }
-
-    // Fix: the insert(0, ...) approach reverses order. Use a cleaner rebuild.
-    // Actually, let's use the simpler correct approach:
-    result.clear();
-    deserialize_binary_inner(data, &mut result);
-    result
-}
-
-fn deserialize_binary_inner(data: &[u8], result: &mut Vec<FfonElement>) {
-    // Parse all flat entries first
-    let mut entries: Vec<(u32, bool, String)> = Vec::new(); // (layer, is_key, content)
-    let mut pos = 0;
-    while pos + 8 <= data.len() {
-        let layer = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
-        let content_len = u32::from_le_bytes(data[pos + 4..pos + 8].try_into().unwrap()) as usize;
-        pos += 8;
-        if pos + content_len > data.len() {
+    let mut rest = data;
+    while let Some((header, after)) = rest.split_first_chunk::<8>() {
+        let layer = u32::from_le_bytes([header[0], header[1], header[2], header[3]]);
+        let len = u32::from_le_bytes([header[4], header[5], header[6], header[7]]) as usize;
+        let Some((raw, after)) = after.split_at_checked(len) else {
             break;
-        }
-        let raw = &data[pos..pos + content_len];
-        pos += content_len;
-        let is_key = raw.last() == Some(&b':');
-        let content = if is_key {
-            std::str::from_utf8(&raw[..raw.len() - 1])
-                .unwrap_or("")
-                .to_owned()
-        } else {
-            std::str::from_utf8(raw).unwrap_or("").to_owned()
         };
-        entries.push((layer, is_key, content));
-    }
+        rest = after;
 
-    // Build tree using a mutable stack of open objects.
-    // Stack entries: (layer, FfonObject in progress)
-    let mut obj_stack: Vec<(u32, FfonObject)> = Vec::new();
-
-    for (layer, is_key, content) in entries {
-        // Close all objects on the stack that are deeper than or equal to this layer
-        // (they are complete — their children come from deeper layers that are now past)
-        while obj_stack.last().is_some_and(|(l, _)| *l >= layer) {
-            let (_, finished) = obj_stack.pop().unwrap();
-            let finished_elem = FfonElement::Obj(finished);
-            if let Some((_, parent)) = obj_stack.last_mut() {
-                parent.children.push(finished_elem);
-            } else {
-                result.push(finished_elem);
-            }
+        // An object at this layer or deeper gets no more children.
+        while open.last().is_some_and(|(l, _)| *l >= layer) {
+            let (_, done) = open.pop().unwrap();
+            attach(FfonElement::Obj(done), &mut open, &mut result);
         }
 
-        if is_key {
-            // Open a new object — children will be pushed to it
-            obj_stack.push((layer, FfonObject::new(content)));
-        } else {
-            // Leaf string — attach to parent or result
-            let str_elem = FfonElement::Str(content);
-            if let Some((_, parent)) = obj_stack.last_mut() {
-                parent.children.push(str_elem);
-            } else {
-                result.push(str_elem);
-            }
+        match raw.strip_suffix(b":") {
+            Some(key) => open.push((layer, FfonObject::new(text(key)))),
+            None => attach(FfonElement::Str(text(raw)), &mut open, &mut result),
         }
     }
 
-    // Close remaining open objects
-    while let Some((_, finished)) = obj_stack.pop() {
-        let finished_elem = FfonElement::Obj(finished);
-        if let Some((_, parent)) = obj_stack.last_mut() {
-            parent.children.push(finished_elem);
-        } else {
-            result.push(finished_elem);
-        }
+    while let Some((_, done)) = open.pop() {
+        attach(FfonElement::Obj(done), &mut open, &mut result);
     }
+    result
 }
 
 pub fn save_ffon_file(elements: &[FfonElement], path: &Path) -> io::Result<()> {
@@ -2225,6 +2100,102 @@ mod tests {
     fn test_binary_empty_input() {
         let back = deserialize_binary(&[]);
         assert!(back.is_empty());
+    }
+
+    /// One node of the binary codec, written by hand.
+    fn binary_node(layer: u32, content: &[u8]) -> Vec<u8> {
+        let mut buf = layer.to_le_bytes().to_vec();
+        buf.extend_from_slice(&(content.len() as u32).to_le_bytes());
+        buf.extend_from_slice(content);
+        buf
+    }
+
+    #[test]
+    fn test_binary_wide_list_keeps_order() {
+        let mut folder = FfonObject::new("folder");
+        for i in 0..10_000 {
+            folder.push(FfonElement::new_str(format!("file {i}")));
+        }
+        let elems = vec![FfonElement::Obj(folder), FfonElement::new_str("after")];
+        assert_eq!(deserialize_binary(&serialize_binary(&elems)), elems);
+    }
+
+    #[test]
+    fn test_binary_deep_nesting() {
+        let mut elem = FfonElement::new_str("bottom");
+        for depth in 0..200 {
+            let mut obj = FfonObject::new(format!("level {depth}"));
+            obj.push(elem);
+            obj.push(FfonElement::new_str(format!("sibling {depth}")));
+            elem = FfonElement::Obj(obj);
+        }
+        let elems = vec![elem];
+        assert_eq!(deserialize_binary(&serialize_binary(&elems)), elems);
+    }
+
+    #[test]
+    fn test_binary_truncated_input_keeps_whole_nodes() {
+        let mut obj = FfonObject::new("A");
+        obj.push(FfonElement::new_str("one"));
+        obj.push(FfonElement::new_str("two"));
+        let data = serialize_binary(&[FfonElement::Obj(obj)]);
+
+        // Cut into the last node's content: it is dropped.
+        let back = deserialize_binary(&data[..data.len() - 1]);
+        let mut expected = FfonObject::new("A");
+        expected.push(FfonElement::new_str("one"));
+        assert_eq!(back, vec![FfonElement::Obj(expected.clone())]);
+
+        // Cut into the last node's header: it is dropped too.
+        let back = deserialize_binary(&data[..data.len() - 3 - 5]);
+        assert_eq!(back, vec![FfonElement::Obj(expected)]);
+    }
+
+    #[test]
+    fn test_binary_invalid_utf8_becomes_empty() {
+        let mut data = binary_node(0, &[0xff, 0xfe]);
+        data.extend(binary_node(0, &[b'k', 0xff, b':']));
+        data.extend(binary_node(1, b"child"));
+        let mut obj = FfonObject::new("");
+        obj.push(FfonElement::new_str("child"));
+        assert_eq!(
+            deserialize_binary(&data),
+            vec![FfonElement::new_str(""), FfonElement::Obj(obj)]
+        );
+    }
+
+    #[test]
+    fn test_binary_layer_jump_attaches_to_open_object() {
+        // A child at layer 3 straight under an object at layer 1, then a
+        // node back at layer 2, then one at layer 0.
+        let mut data = binary_node(0, b"root:");
+        data.extend(binary_node(1, b"a:"));
+        data.extend(binary_node(3, b"deep"));
+        data.extend(binary_node(3, b"deep obj:"));
+        data.extend(binary_node(2, b"mid"));
+        data.extend(binary_node(0, b"top"));
+
+        let mut a = FfonObject::new("a");
+        a.push(FfonElement::new_str("deep"));
+        a.push(FfonElement::new_obj("deep obj"));
+        a.push(FfonElement::new_str("mid"));
+        let mut root = FfonObject::new("root");
+        root.push(FfonElement::Obj(a));
+        assert_eq!(
+            deserialize_binary(&data),
+            vec![FfonElement::Obj(root), FfonElement::new_str("top")]
+        );
+    }
+
+    #[test]
+    fn test_binary_leaf_with_trailing_colon_becomes_object() {
+        // The codec marks an object by a trailing ':', so a leaf that ends in
+        // one cannot be told apart. Pinned here so a change is deliberate.
+        let data = serialize_binary(&[FfonElement::new_str("Total:")]);
+        assert_eq!(
+            deserialize_binary(&data),
+            vec![FfonElement::new_obj("Total")]
+        );
     }
 
     #[test]
