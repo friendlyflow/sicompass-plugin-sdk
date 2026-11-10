@@ -50,6 +50,12 @@ mod types_reexport {
 }
 pub use types_reexport::*;
 
+/// A Ctrl+F walk ([`Plugin::extended_search`]): it hands each result to the
+/// function it is given, and returns as soon as that answers `false`. It
+/// returns `true` when it saw everything, and `false` when it stopped at a
+/// budget of its own, which the user is told: the results are incomplete.
+pub type ExtendedSearch = Box<dyn FnOnce(&mut dyn FnMut(SearchResult) -> bool) -> bool + Send>;
+
 /// Naming your own assets: `assets::uri("my-plugin", "logo.png")` builds the
 /// `asset:` string an `<image>`/`<link>` tag or
 /// [`Plugin::dashboard_image_path`] should carry. The app resolves it.
@@ -362,8 +368,25 @@ pub trait Plugin: Sized + 'static {
 
     // ---- Extended search ---------------------------------------------------
 
-    /// Items for Ctrl+F. `None` lets the app walk the FFON tree instead.
+    /// Items for Ctrl+F, all at once, while the app waits. `None` lets the app
+    /// walk the FFON tree instead. The app no longer asks for this: implement
+    /// [`Plugin::extended_search`].
     fn collect_extended_search_items(&self) -> Option<Vec<SearchResult>> {
+        None
+    }
+
+    /// The walk Ctrl+F runs over everything below the current path, or `None`
+    /// (the default) to let the app search what it has loaded.
+    ///
+    /// Build it from what it needs (the path, a setting), not from `self`: the
+    /// runtime runs it on a thread of its own, so the app keeps drawing, and
+    /// shows what it finds as it goes. Hand each result to `found` (its
+    /// `nav_path` is in the same form as [`Plugin::current_path`]) and return
+    /// once `found` answers `false`, which it does when the user left the
+    /// search. Read names only, write nothing, and stop within a budget of
+    /// your own: a walk of a whole disk is never what the user meant. Return
+    /// `false` when that budget stopped it.
+    fn extended_search(&self) -> Option<ExtendedSearch> {
         None
     }
 

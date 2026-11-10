@@ -215,12 +215,13 @@ fn serve_with<T: Plugin>(
         .expect("cannot start the channel thread");
 
     let mut plugin: Option<T> = None;
+    let mut search: Option<SearchJob> = None;
     let mut cleaned_up = false;
     let mut reported_path = String::new();
     for (id, request) in incoming {
         let is_cleanup = matches!(request, Request::Cleanup);
         let p = plugin.get_or_insert_with(T::new);
-        let answer = catch_unwind(AssertUnwindSafe(|| dispatch(p, request)));
+        let answer = catch_unwind(AssertUnwindSafe(|| dispatch(p, &mut search, request)));
         let (response, failed) = match answer {
             Ok(r) => (r, false),
             Err(panic) => (Response::Failed(panic_message(&*panic)), true),
@@ -270,8 +271,104 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Extended search
+// ---------------------------------------------------------------------------
+
+/// The most a walk may hand over, whatever the plugin's own budget: past it
+/// `found` answers `false`, so a walk that never stops cannot fill the memory
+/// of both processes.
+const MAX_SEARCH_ITEMS: usize = 200_000;
+/// The most one [`Request::TakeExtendedSearchItems`] carries, so a frame that
+/// takes them stays short.
+const SEARCH_BATCH: usize = 5_000;
+
+/// What a walk found and the app has not taken yet.
+#[derive(Default)]
+struct SearchFound {
+    items: Vec<crate::plugin_ipc::SearchResult>,
+    /// The walk returned (or panicked).
+    ended: bool,
+    /// It ended before it had seen everything: its own budget, the
+    /// runtime's cap, or a panic.
+    cut_short: bool,
+}
+
+/// The Ctrl+F walk running on its own thread. Dropping it stops the walk at
+/// its next result.
+struct SearchJob {
+    found: Arc<Mutex<SearchFound>>,
+    stop: Arc<AtomicBool>,
+}
+
+impl SearchJob {
+    fn start(walk: super::ExtendedSearch) -> SearchJob {
+        let found = Arc::new(Mutex::new(SearchFound::default()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (thread_found, thread_stop) = (found.clone(), stop.clone());
+        let spawned = std::thread::Builder::new()
+            .name("extended-search".into())
+            .spawn(move || {
+                let mut handed = 0usize;
+                let mut capped = false;
+                let mut take = |item| {
+                    if thread_stop.load(Ordering::Relaxed) {
+                        return false;
+                    }
+                    if handed >= MAX_SEARCH_ITEMS {
+                        capped = true;
+                        return false;
+                    }
+                    handed += 1;
+                    lock(&thread_found).items.push(item);
+                    true
+                };
+                // A panic ends this walk, not the plugin: the app has what was
+                // found before it.
+                let saw_everything = match catch_unwind(AssertUnwindSafe(|| walk(&mut take))) {
+                    Ok(all) => all,
+                    Err(panic) => {
+                        eprintln!("the extended search panicked: {}", panic_message(&*panic));
+                        false
+                    }
+                };
+                let mut found = lock(&thread_found);
+                found.cut_short = capped || !saw_everything;
+                found.ended = true;
+            });
+        if spawned.is_err() {
+            lock(&found).ended = true;
+        }
+        SearchJob { found, stop }
+    }
+
+    /// Up to [`SEARCH_BATCH`] results, oldest first, whether that was the
+    /// last of them, and whether the walk was cut short.
+    fn take(&self) -> Response {
+        let mut found = lock(&self.found);
+        let n = found.items.len().min(SEARCH_BATCH);
+        let items: Vec<_> = found.items.drain(..n).collect();
+        let done = found.ended && found.items.is_empty();
+        Response::SearchBatch {
+            items,
+            done,
+            cut_short: done && found.cut_short,
+        }
+    }
+}
+
+impl Drop for SearchJob {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 /// Answer one call.
-fn dispatch<T: Plugin>(p: &mut T, request: Request) -> Response {
+fn dispatch<T: Plugin>(p: &mut T, search: &mut Option<SearchJob>, request: Request) -> Response {
     use Response as R;
     match request {
         Request::Init(info) => {
@@ -399,6 +496,24 @@ fn dispatch<T: Plugin>(p: &mut T, request: Request) -> Response {
         }
         Request::CannotAddHere => R::OptStr(p.cannot_add_here()),
         Request::AllowsScrollPrefetch => R::Bool(p.allows_scroll_prefetch()),
+        Request::StartExtendedSearch => {
+            // The walk still running is for another search: stop it first.
+            *search = None;
+            *search = p.extended_search().map(SearchJob::start);
+            R::Bool(search.is_some())
+        }
+        Request::TakeExtendedSearchItems => match search {
+            Some(job) => job.take(),
+            None => R::SearchBatch {
+                items: Vec::new(),
+                done: true,
+                cut_short: false,
+            },
+        },
+        Request::StopExtendedSearch => {
+            *search = None;
+            R::Unit
+        }
     }
 }
 

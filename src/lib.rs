@@ -93,7 +93,9 @@ pub use placeholders::{
     CI_PLACEHOLDER, I_PLACEHOLDER, is_ci_placeholder, is_i_placeholder, new_obj_with_i_placeholder,
     seed_i_placeholders,
 };
-pub use provider::{ListItem, NavigationRequest, Provider, SearchResultItem};
+pub use provider::{
+    ExtendedSearchProgress, ListItem, NavigationRequest, Provider, SearchResultItem,
+};
 pub use timeline::{
     ChatOpKind, FsOpKind, FsSideEffect, ImapOpKind, NavKind, StructuralOp, StructuralPayload,
     TimelineEntry, TrashedTree,

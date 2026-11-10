@@ -14,8 +14,10 @@ use crate::plugin_manifest::Permissions;
 /// for broken and exits), so the app sends a request only to a plugin whose
 /// hello names that minor or a later one ([`protocol_has`]).
 ///
-/// 1.1 added `Request::CannotAddHere`, 1.2 `Request::AllowsScrollPrefetch`.
-pub const PROTOCOL_VERSION: &str = "1.2";
+/// 1.1 added `Request::CannotAddHere`, 1.2 `Request::AllowsScrollPrefetch`,
+/// 1.3 the live extended search (`Request::StartExtendedSearch`,
+/// `Request::TakeExtendedSearchItems`, `Request::StopExtendedSearch`).
+pub const PROTOCOL_VERSION: &str = "1.3";
 
 /// The `abi` a release of a plugin process names in `release.json`. Unlike
 /// [`ABI_VERSION`], an app that only runs WASM components refuses it rather
@@ -217,6 +219,8 @@ mod tests {
     fn protocol_has_compares_the_minor_within_one_major() {
         assert!(protocol_has(PROTOCOL_VERSION, "1.1"));
         assert!(protocol_has(PROTOCOL_VERSION, "1.2"));
+        assert!(protocol_has(PROTOCOL_VERSION, "1.3"));
+        assert!(!protocol_has("1.2", "1.3"));
         assert!(!protocol_has("1.1", "1.2"));
         assert!(!protocol_has("1.0", "1.1"));
         assert!(protocol_has("1.2", "1.1"));

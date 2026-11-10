@@ -12,6 +12,15 @@ use std::sync::atomic::AtomicUsize;
 static SERIAL: Mutex<()> = Mutex::new(());
 
 static CLEANUPS: AtomicUsize = AtomicUsize::new(0);
+static ENDLESS_STOPPED: AtomicBool = AtomicBool::new(false);
+
+fn result(root: &str, name: &str) -> crate::plugin_ipc::SearchResult {
+    crate::plugin_ipc::SearchResult {
+        label: format!("- {name}"),
+        breadcrumb: String::new(),
+        nav_path: format!("{}/{name}", root.trim_end_matches('/')),
+    }
+}
 
 struct Echo {
     path: String,
@@ -73,6 +82,38 @@ impl Plugin for Echo {
     }
     fn allows_scroll_prefetch(&self) -> bool {
         false
+    }
+    fn extended_search(&self) -> Option<crate::plugin::ExtendedSearch> {
+        let root = self.path.clone();
+        match root.as_str() {
+            "/none" => None,
+            // Never ends on its own: only the app leaving the search stops it.
+            "/endless" => Some(Box::new(move |found| {
+                let mut i = 0u64;
+                while found(result(&root, &format!("f{i}"))) {
+                    i += 1;
+                }
+                ENDLESS_STOPPED.store(true, Ordering::SeqCst);
+                true
+            })),
+            // Its own budget stops it after one result.
+            "/budget" => Some(Box::new(move |found| {
+                found(result(&root, "first"));
+                false
+            })),
+            "/panics" => Some(Box::new(move |found| {
+                found(result(&root, "before"));
+                panic!("the walk fell over");
+            })),
+            _ => Some(Box::new(move |found| {
+                for name in ["a", "b", "c"] {
+                    if !found(result(&root, name)) {
+                        break;
+                    }
+                }
+                true
+            })),
+        }
     }
     fn on_setting_change(&mut self, _key: &str, value: &str) {
         self.setting = Some(value.to_owned());
@@ -290,6 +331,144 @@ fn allows_scroll_prefetch_is_the_plugins_answer() {
         app.call(Request::AllowsScrollPrefetch).0,
         Response::Bool(false)
     );
+    app.close();
+}
+
+/// Take what the walk found until it says it is over, and whether it was
+/// cut short.
+fn take_all(app: &mut App) -> (Vec<String>, bool) {
+    let mut paths = Vec::new();
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        match app.call(Request::TakeExtendedSearchItems).0 {
+            Response::SearchBatch {
+                items,
+                done,
+                cut_short,
+            } => {
+                paths.extend(items.into_iter().map(|i| i.nav_path));
+                if done {
+                    return (paths, cut_short);
+                }
+                assert!(!cut_short, "only the last batch says so");
+            }
+            other => panic!("expected a search batch, got {other:?}"),
+        }
+        assert!(std::time::Instant::now() < deadline, "the walk never ended");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// The walk runs on its own thread from the path the plugin is at, and what
+/// it found arrives batch by batch until it says it is over.
+#[test]
+fn an_extended_search_walks_on_its_own_thread() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let mut app = App::start();
+    init(&mut app, Vec::new());
+    app.call(Request::SetCurrentPath("/docs".into()));
+    assert_eq!(
+        app.call(Request::StartExtendedSearch).0,
+        Response::Bool(true)
+    );
+    assert_eq!(
+        take_all(&mut app),
+        (
+            vec!["/docs/a".to_owned(), "/docs/b".into(), "/docs/c".into()],
+            false
+        )
+    );
+    // Over is over: a later take has nothing, and still says so.
+    assert_eq!(
+        app.call(Request::TakeExtendedSearchItems).0,
+        Response::SearchBatch {
+            items: Vec::new(),
+            done: true,
+            cut_short: false,
+        }
+    );
+    app.close();
+}
+
+/// Leaving the search stops a walk that would never stop by itself.
+#[test]
+fn stopping_an_extended_search_ends_the_walk() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    ENDLESS_STOPPED.store(false, Ordering::SeqCst);
+    let mut app = App::start();
+    init(&mut app, Vec::new());
+    app.call(Request::SetCurrentPath("/endless".into()));
+    assert_eq!(
+        app.call(Request::StartExtendedSearch).0,
+        Response::Bool(true)
+    );
+    // One batch is never more than the cap, however fast the walk is.
+    std::thread::sleep(Duration::from_millis(50));
+    match app.call(Request::TakeExtendedSearchItems).0 {
+        Response::SearchBatch { items, done, .. } => {
+            assert!(!done);
+            assert!(items.len() <= SEARCH_BATCH);
+        }
+        other => panic!("expected a search batch, got {other:?}"),
+    }
+    assert_eq!(app.call(Request::StopExtendedSearch).0, Response::Unit);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !ENDLESS_STOPPED.load(Ordering::SeqCst) {
+        assert!(std::time::Instant::now() < deadline, "the walk went on");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    // Nothing is left to take once it was stopped.
+    assert_eq!(
+        app.call(Request::TakeExtendedSearchItems).0,
+        Response::SearchBatch {
+            items: Vec::new(),
+            done: true,
+            cut_short: false,
+        }
+    );
+    app.close();
+}
+
+/// A plugin with no walk says so, and the app searches what it has loaded.
+#[test]
+fn a_plugin_without_an_extended_search_says_no() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let mut app = App::start();
+    init(&mut app, Vec::new());
+    app.call(Request::SetCurrentPath("/none".into()));
+    assert_eq!(
+        app.call(Request::StartExtendedSearch).0,
+        Response::Bool(false)
+    );
+    assert_eq!(take_all(&mut app), (Vec::<String>::new(), false));
+    app.close();
+}
+
+/// A walk its own budget stopped says so, with what it found before.
+#[test]
+fn a_walk_stopped_by_its_budget_is_cut_short() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let mut app = App::start();
+    init(&mut app, Vec::new());
+    app.call(Request::SetCurrentPath("/budget".into()));
+    app.call(Request::StartExtendedSearch);
+    assert_eq!(take_all(&mut app), (vec!["/budget/first".to_owned()], true));
+    app.close();
+}
+
+/// A walk that panics is cut short, and the plugin goes on answering.
+#[test]
+fn a_walk_that_panics_is_cut_short_and_the_plugin_lives() {
+    let _turn = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let mut app = App::start();
+    init(&mut app, Vec::new());
+    app.call(Request::SetCurrentPath("/panics".into()));
+    app.call(Request::StartExtendedSearch);
+    assert_eq!(
+        take_all(&mut app),
+        (vec!["/panics/before".to_owned()], true)
+    );
+    assert_eq!(fetched(&mut app).len(), 2);
     app.close();
 }
 

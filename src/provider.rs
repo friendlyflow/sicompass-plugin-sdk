@@ -46,6 +46,29 @@ pub enum NavigationRequest {
     SelectPath(Vec<usize>),
 }
 
+/// What a provider's Ctrl+F walk found since it was last asked
+/// ([`Provider::take_extended_search_items`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtendedSearchProgress {
+    pub items: Vec<SearchResultItem>,
+    /// The walk has ended, and everything it found has been taken.
+    pub done: bool,
+    /// The walk ended before it had seen everything (its size or time budget),
+    /// so the results are incomplete.
+    pub cut_short: bool,
+}
+
+impl Default for ExtendedSearchProgress {
+    /// Nothing more to come: what a provider without a walk answers.
+    fn default() -> Self {
+        ExtendedSearchProgress {
+            items: Vec::new(),
+            done: true,
+            cut_short: false,
+        }
+    }
+}
+
 /// A result item from extended search (Ctrl+F).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchResultItem {
@@ -367,6 +390,29 @@ pub trait Provider: Send + 'static {
     fn collect_extended_search_items(&self) -> Option<Vec<SearchResultItem>> {
         None
     }
+
+    /// Ctrl+F: start walking everything below the current path, on a thread
+    /// of the provider's own, so the app can show what is deeper than what the
+    /// user has opened without waiting for it. Stops a walk still running.
+    ///
+    /// `false` (the default) when the provider has no such walk: the app then
+    /// searches the levels it has loaded, after loading a few more the way
+    /// scroll mode does (see [`Provider::allows_scroll_prefetch`]).
+    ///
+    /// A walk reads names only, never what a file holds, and writes nothing.
+    /// It ends on its own within a size and time budget.
+    fn start_extended_search(&mut self) -> bool {
+        false
+    }
+
+    /// What the walk found since the last call, and whether it is over.
+    /// Called every frame or so while the search is open.
+    fn take_extended_search_items(&mut self) -> ExtendedSearchProgress {
+        ExtendedSearchProgress::default()
+    }
+
+    /// The user left the search: stop the walk.
+    fn stop_extended_search(&mut self) {}
 
     // ---- Optional: meta/help -----------------------------------------------
 
@@ -1006,6 +1052,16 @@ mod tests {
     fn test_provider_collect_extended_search_default_none() {
         let p = SimpleProvider::new("t");
         assert!(p.collect_extended_search_items().is_none());
+    }
+
+    /// A provider without a walk says so, and has nothing to hand over.
+    #[test]
+    fn test_provider_live_extended_search_default_off() {
+        let mut p = SimpleProvider::new("t");
+        assert!(!p.start_extended_search());
+        let progress = p.take_extended_search_items();
+        assert!(progress.items.is_empty() && progress.done && !progress.cut_short);
+        p.stop_extended_search();
     }
 
     #[test]

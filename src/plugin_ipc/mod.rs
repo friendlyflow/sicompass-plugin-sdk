@@ -147,6 +147,15 @@ pub enum Request {
     /// Whether scroll mode may fetch levels the user has not opened. Since
     /// protocol 1.2.
     AllowsScrollPrefetch,
+    /// Ctrl+F: start walking everything below the current path, on a thread
+    /// of the plugin's own, stopping any walk still running. `Bool(false)`
+    /// when the plugin has no such walk. Since protocol 1.3.
+    StartExtendedSearch,
+    /// What the walk found since the last take, as
+    /// [`Response::SearchBatch`]. Since protocol 1.3.
+    TakeExtendedSearchItems,
+    /// The user left the search: stop the walk. Since protocol 1.3.
+    StopExtendedSearch,
 }
 
 /// What a plugin is told when it starts.
@@ -187,6 +196,16 @@ pub enum Response {
     /// The plugin failed while answering: a panic, with its message. The app
     /// stops using a plugin that sends this.
     Failed(String),
+    /// Part of what an extended search found, answering
+    /// [`Request::TakeExtendedSearchItems`]. `done` once the walk has ended
+    /// and everything it found has been taken. `cut_short` once it ended
+    /// before it had seen everything (a budget, a panic), so the user knows
+    /// the results are incomplete. Since protocol 1.3.
+    SearchBatch {
+        items: Vec<SearchResult>,
+        done: bool,
+        cut_short: bool,
+    },
 }
 
 /// What a plugin asks the app.
@@ -454,6 +473,11 @@ mod tests {
             Request::LeaveDashboard,
             Request::SetDashboardPalette(palette()),
             Request::LocaleChanged,
+            Request::CannotAddHere,
+            Request::AllowsScrollPrefetch,
+            Request::StartExtendedSearch,
+            Request::TakeExtendedSearchItems,
+            Request::StopExtendedSearch,
         ];
         for (i, request) in requests.into_iter().enumerate() {
             round_trip(Message::Call {
@@ -504,6 +528,20 @@ mod tests {
             Response::Frame(frame()),
             Response::Unsupported,
             Response::Failed("panicked at x".into()),
+            Response::SearchBatch {
+                items: vec![SearchResult {
+                    label: "+ docs".into(),
+                    breadcrumb: String::new(),
+                    nav_path: "/a/docs".into(),
+                }],
+                done: false,
+                cut_short: false,
+            },
+            Response::SearchBatch {
+                items: Vec::new(),
+                done: true,
+                cut_short: true,
+            },
         ];
         for (i, response) in responses.into_iter().enumerate() {
             round_trip(Message::Reply {
