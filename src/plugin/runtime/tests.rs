@@ -77,6 +77,16 @@ impl Plugin for Echo {
     fn render_url(&mut self, url: &str) -> bool {
         url.starts_with("https://")
     }
+    fn completions(&mut self) -> crate::plugin_ipc::Completions {
+        let item = |s: &str| crate::plugin_ipc::ListItem {
+            label: s.into(),
+            data: s.into(),
+        };
+        crate::plugin_ipc::Completions {
+            words: vec![item("echo")],
+            lines: vec![item(&format!("cd {}", self.path))],
+        }
+    }
     fn cannot_add_here(&mut self) -> Option<String> {
         (self.path == "/readonly").then(|| "cannot add to /readonly".to_owned())
     }
@@ -258,6 +268,14 @@ fn a_plugin_is_served_call_by_call() {
     });
     assert_eq!(r, Response::Bool(true));
     assert_eq!(moved.as_deref(), Some("/elsewhere"));
+
+    // The second `:` asks for what to write a line from.
+    let (r, _) = app.call(Request::Completions);
+    let Response::Completions(c) = r else {
+        panic!("expected Completions, got {r:?}");
+    };
+    assert_eq!(c.words[0].data, "echo");
+    assert_eq!(c.lines[0].data, "cd /elsewhere");
 
     // The render command goes to `render_url`.
     let (r, _) = app.call(Request::ExecuteCommand {

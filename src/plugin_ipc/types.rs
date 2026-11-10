@@ -19,6 +19,20 @@ pub struct ListItem {
     pub data: String,
 }
 
+/// What the user can pick from while writing a line in second command mode
+/// (see [`crate::plugin_abi::COMPOSE_COMMAND`]). The app filters both lists
+/// itself and shows the words first.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Completions {
+    /// Completed at the caret: Tab puts `data` and a space in place of the
+    /// word the caret is in (a program, a skill). Offered when it starts with
+    /// that word.
+    pub words: Vec<ListItem>,
+    /// Whole lines: Tab puts `data` in place of everything written (a command
+    /// run before, a prompt sent before). Matched against the whole line.
+    pub lines: Vec<ListItem>,
+}
+
 /// A result item from extended search (Ctrl+F).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchResult {

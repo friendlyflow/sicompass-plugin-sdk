@@ -156,6 +156,10 @@ pub enum Request {
     TakeExtendedSearchItems,
     /// The user left the search: stop the walk. Since protocol 1.3.
     StopExtendedSearch,
+    /// What the user can pick from while writing a line, as
+    /// [`Response::Completions`]. Asked once as second command mode opens.
+    /// Since protocol 1.4.
+    Completions,
 }
 
 /// What a plugin is told when it starts.
@@ -206,6 +210,8 @@ pub enum Response {
         done: bool,
         cut_short: bool,
     },
+    /// Answers [`Request::Completions`]. Since protocol 1.4.
+    Completions(Completions),
 }
 
 /// What a plugin asks the app.
@@ -478,6 +484,7 @@ mod tests {
             Request::StartExtendedSearch,
             Request::TakeExtendedSearchItems,
             Request::StopExtendedSearch,
+            Request::Completions,
         ];
         for (i, request) in requests.into_iter().enumerate() {
             round_trip(Message::Call {
@@ -542,6 +549,17 @@ mod tests {
                 done: true,
                 cut_short: true,
             },
+            Response::Completions(Completions {
+                words: vec![ListItem {
+                    label: "git".into(),
+                    data: "git".into(),
+                }],
+                lines: vec![ListItem {
+                    label: "git status".into(),
+                    data: "git status".into(),
+                }],
+            }),
+            Response::Completions(Completions::default()),
         ];
         for (i, response) in responses.into_iter().enumerate() {
             round_trip(Message::Reply {

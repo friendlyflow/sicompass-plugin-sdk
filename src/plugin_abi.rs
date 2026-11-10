@@ -16,8 +16,10 @@ use crate::plugin_manifest::Permissions;
 ///
 /// 1.1 added `Request::CannotAddHere`, 1.2 `Request::AllowsScrollPrefetch`,
 /// 1.3 the live extended search (`Request::StartExtendedSearch`,
-/// `Request::TakeExtendedSearchItems`, `Request::StopExtendedSearch`).
-pub const PROTOCOL_VERSION: &str = "1.3";
+/// `Request::TakeExtendedSearchItems`, `Request::StopExtendedSearch`), 1.4
+/// `Request::Completions` (the second `:` of a session, see
+/// [`COMPOSE_COMMAND`]).
+pub const PROTOCOL_VERSION: &str = "1.4";
 
 /// The `abi` a release of a plugin process names in `release.json`. Unlike
 /// [`ABI_VERSION`], an app that only runs WASM components refuses it rather
@@ -85,6 +87,14 @@ pub fn executable_name(entry: &str, target: &str) -> String {
 /// render a URL with, through `execute_command`: the URL is the selection. The
 /// answer comes back through `host::page_rendered`.
 pub const RENDER_URL_COMMAND: &str = "sicompass:render-url";
+
+/// The command id a plugin lists in `commands()` while it has a prompt the
+/// user can write a line for: a shell, a chat with a program. With it listed,
+/// `:` opens second command mode, where the user writes the line with the
+/// rows of `completions()` to pick from (Tab completes), and Enter puts it in
+/// the prompt, the level's last row, an `<input>`. The app never sends it to
+/// `handle_command`. Since protocol 1.4.
+pub const COMPOSE_COMMAND: &str = "compose";
 
 /// The part of a manifest the user approves, as one canonical line: sorted,
 /// deduplicated, stable across key order and case. Stored when the user grants

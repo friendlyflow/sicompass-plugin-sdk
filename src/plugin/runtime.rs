@@ -422,6 +422,7 @@ fn dispatch<T: Plugin>(p: &mut T, search: &mut Option<SearchJob>, request: Reque
                 .map(|e| e.map(|e| encode_one(&e))),
         ),
         Request::CommandListItems(cmd) => R::ListItems(p.command_list_items(&cmd)),
+        Request::Completions => R::Completions(p.completions()),
         Request::ExecuteCommand { cmd, selection } => {
             R::Bool(if cmd == super::RENDER_URL_COMMAND {
                 p.render_url(&selection)

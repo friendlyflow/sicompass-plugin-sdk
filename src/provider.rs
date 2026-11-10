@@ -16,6 +16,18 @@ pub struct ListItem {
     pub data: String,
 }
 
+/// What the user can pick from while writing a line in second command mode
+/// (see [`crate::plugin_abi::COMPOSE_COMMAND`] and [`Provider::completions`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Completions {
+    /// Completed at the caret: Tab puts `data` and a space in place of the
+    /// word the caret is in. Offered when it starts with that word.
+    pub words: Vec<ListItem>,
+    /// Whole lines: Tab puts `data` in place of everything written. Matched
+    /// against the whole line.
+    pub lines: Vec<ListItem>,
+}
+
 /// A cursor move a provider can ask the app to perform outside a keypress.
 ///
 /// Returned by [`Provider::take_navigation_request`]. Used when background
@@ -211,6 +223,13 @@ pub trait Provider: Send + 'static {
         false
     }
 
+    /// What the user can pick from while writing a line for this provider's
+    /// prompt (second command mode). Asked once as the mode opens, and only
+    /// while `commands()` lists [`crate::plugin_abi::COMPOSE_COMMAND`].
+    fn completions(&mut self) -> Completions {
+        Completions::default()
+    }
+
     /// Display label for a command ID. The strings returned by `commands()`
     /// are stable identifiers (matched on in `handle_command` /
     /// `execute_command`); this method returns the localized text shown to
@@ -247,7 +266,9 @@ pub trait Provider: Send + 'static {
     fn on_checkbox_change(&mut self, _label: &str, _checked: bool) {}
 
     /// Set the value the provider renders inside its live `<input>` slot on the
-    /// next `fetch()`. Used to fill a terminal-style input from a history pick.
+    /// next `fetch()`: the line written in second command mode, or a cancelled
+    /// edit's text put back. It comes as the row holds it (escaped where the
+    /// rows are markup).
     fn set_input_value(&mut self, _value: &str) {}
 
     /// Called once per frame from the main loop. Providers use this to drive

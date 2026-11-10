@@ -43,9 +43,9 @@
 
 mod types_reexport {
     pub use crate::plugin_ipc::{
-        Application, Cell, CellAttrs, CursorStyle, DashboardKind, DashboardRequest, Descriptor,
-        Ffon, Frame, Key, Keysym, ListItem, NavigationRequest, OauthReply, Palette, PollResult,
-        ProviderOp, SearchResult, Selection, TaskEvent, TierStanding, TierStatus,
+        Application, Cell, CellAttrs, Completions, CursorStyle, DashboardKind, DashboardRequest,
+        Descriptor, Ffon, Frame, Key, Keysym, ListItem, NavigationRequest, OauthReply, Palette,
+        PollResult, ProviderOp, SearchResult, Selection, TaskEvent, TierStanding, TierStatus,
     };
 }
 pub use types_reexport::*;
@@ -60,6 +60,9 @@ pub type ExtendedSearch = Box<dyn FnOnce(&mut dyn FnMut(SearchResult) -> bool) -
 /// `asset:` string an `<image>`/`<link>` tag or
 /// [`Plugin::dashboard_image_path`] should carry. The app resolves it.
 pub use crate::assets;
+/// The command id that gives your prompt second command mode (see
+/// [`Plugin::completions`]).
+pub use crate::plugin_abi::COMPOSE_COMMAND;
 /// The command id the app renders a URL with (see [`Plugin::render_url`]).
 pub use crate::plugin_abi::RENDER_URL_COMMAND;
 /// The FFON data model, re-exported so a plugin needs one import path.
@@ -327,6 +330,17 @@ pub trait Plugin: Sized + 'static {
         false
     }
 
+    /// What the user can pick from while writing a line for your prompt, asked
+    /// once each time `:` opens second command mode. Only asked while
+    /// `commands()` lists [`COMPOSE_COMMAND`]: list it while the level the
+    /// user is in ends in your prompt, an `<input>`. `words` are completed at
+    /// the caret (programs, skills), `lines` replace the whole line (what was
+    /// run or sent before). The app filters them as the user types, words
+    /// first. Enter puts the line in the prompt through `set_input_value`.
+    fn completions(&mut self) -> Completions {
+        Completions::default()
+    }
+
     /// The app asks for `url` rendered, for a link another program shows.
     /// Only for a plugin whose `plugin.json` says `"rendersPages": true`.
     /// Start the work and return `true`, then hand the page over with
@@ -345,6 +359,10 @@ pub trait Plugin: Sized + 'static {
     fn on_radio_change(&mut self, _group: &str, _value: &str) {}
     fn on_button_press(&mut self, _function_name: &str) {}
     fn on_checkbox_change(&mut self, _label: &str, _checked: bool) {}
+    /// The value for your prompt's `<input>` to show on the next `fetch()`: the
+    /// line the user wrote in second command mode, or a cancelled edit's text
+    /// put back. It comes as the row holds it, so where your rows are markup a
+    /// typed `<` arrives escaped.
     fn set_input_value(&mut self, _value: &str) {}
 
     /// One of the settings declared in `plugin.json` changed. Current values are

@@ -94,7 +94,7 @@ pub use placeholders::{
     seed_i_placeholders,
 };
 pub use provider::{
-    ExtendedSearchProgress, ListItem, NavigationRequest, Provider, SearchResultItem,
+    Completions, ExtendedSearchProgress, ListItem, NavigationRequest, Provider, SearchResultItem,
 };
 pub use timeline::{
     ChatOpKind, FsOpKind, FsSideEffect, ImapOpKind, NavKind, StructuralOp, StructuralPayload,
