@@ -207,6 +207,85 @@ pub fn selection_spans(lines: &[InputLine], from: usize, to: usize) -> Vec<(usiz
         .collect()
 }
 
+/// What a word move stops at: runs of word characters, runs of punctuation, and
+/// the whitespace between them (a line break is whitespace).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WordClass {
+    Space,
+    Word,
+    Punct,
+}
+
+fn word_class(c: char) -> WordClass {
+    if c.is_whitespace() {
+        WordClass::Space
+    } else if c.is_alphanumeric() || c == '_' {
+        WordClass::Word
+    } else {
+        WordClass::Punct
+    }
+}
+
+/// Where Ctrl+Left lands from `pos`: back over any whitespace, then over the run
+/// of word characters (or of punctuation) before it, so at the start of a word.
+/// A position past the end or inside a character is clamped first.
+pub fn word_left(text: &str, pos: usize) -> usize {
+    let mut pos = floor_boundary(text, pos);
+    let mut chars = text[..pos].char_indices().rev().peekable();
+    while let Some(&(i, c)) = chars.peek() {
+        if word_class(c) != WordClass::Space {
+            break;
+        }
+        pos = i;
+        chars.next();
+    }
+    let Some(&(_, first)) = chars.peek() else {
+        return pos;
+    };
+    let class = word_class(first);
+    for (i, c) in chars {
+        if word_class(c) != class {
+            break;
+        }
+        pos = i;
+    }
+    pos
+}
+
+/// Where Ctrl+Right lands from `pos`: over any whitespace, then over the run of
+/// word characters (or of punctuation) after it, so at the end of a word, the way
+/// text fields on Linux move.
+pub fn word_right(text: &str, pos: usize) -> usize {
+    let mut pos = floor_boundary(text, pos);
+    let mut chars = text[pos..].chars().peekable();
+    while let Some(&c) = chars.peek() {
+        if word_class(c) != WordClass::Space {
+            break;
+        }
+        pos += c.len_utf8();
+        chars.next();
+    }
+    let Some(&first) = chars.peek() else {
+        return pos;
+    };
+    let class = word_class(first);
+    for c in chars {
+        if word_class(c) != class {
+            break;
+        }
+        pos += c.len_utf8();
+    }
+    pos
+}
+
+fn floor_boundary(text: &str, pos: usize) -> usize {
+    let mut pos = pos.min(text.len());
+    while !text.is_char_boundary(pos) {
+        pos -= 1;
+    }
+    pos
+}
+
 /// A text field's editable state, for a surface that edits text itself.
 ///
 /// The app keeps these three values as separate fields on its renderer and calls
@@ -313,6 +392,58 @@ impl InputState {
     pub fn end(&mut self, lines: &[InputLine]) {
         self.caret = line_end(lines, self.caret);
         self.settle();
+    }
+
+    /// Put the caret at `pos`, growing the selection when `extend`, else dropping it.
+    fn move_caret(&mut self, pos: usize, extend: bool) {
+        if extend {
+            self.anchor.get_or_insert(self.caret);
+        } else {
+            self.anchor = None;
+        }
+        self.caret = pos;
+        self.goal_col = None;
+    }
+
+    /// Ctrl+Left: the start of the word before the caret. See [`word_left`].
+    pub fn word_left(&mut self, extend: bool) {
+        self.move_caret(word_left(&self.text, self.caret), extend);
+    }
+
+    /// Ctrl+Right: the end of the word after the caret. See [`word_right`].
+    pub fn word_right(&mut self, extend: bool) {
+        self.move_caret(word_right(&self.text, self.caret), extend);
+    }
+
+    /// Ctrl+Home: the start of the whole text.
+    pub fn text_home(&mut self, extend: bool) {
+        self.move_caret(0, extend);
+    }
+
+    /// Ctrl+End: the end of the whole text.
+    pub fn text_end(&mut self, extend: bool) {
+        self.move_caret(self.text.len(), extend);
+    }
+
+    /// Ctrl+Backspace: delete the selection, or back to the start of the word.
+    pub fn delete_word_back(&mut self) {
+        self.goal_col = None;
+        if self.delete_selection() {
+            return;
+        }
+        let from = word_left(&self.text, self.caret);
+        self.text.replace_range(from..self.caret, "");
+        self.caret = from;
+    }
+
+    /// Ctrl+Delete: delete the selection, or on to the end of the word.
+    pub fn delete_word_forward(&mut self) {
+        self.goal_col = None;
+        if self.delete_selection() {
+            return;
+        }
+        let to = word_right(&self.text, self.caret);
+        self.text.replace_range(self.caret..to, "");
     }
 
     /// Up one visual line. `extend` grows the selection instead of dropping it.
@@ -492,5 +623,77 @@ mod tests {
         assert_eq!(s.caret, 3);
         s.right();
         assert_eq!(s.caret, 3);
+    }
+
+    #[test]
+    fn word_left_lands_on_the_start_of_the_word_before() {
+        let t = "hello brave  world";
+        assert_eq!(word_left(t, t.len()), 13);
+        assert_eq!(word_left(t, 13), 6);
+        assert_eq!(word_left(t, 8), 6);
+        assert_eq!(word_left(t, 6), 0);
+        assert_eq!(word_left(t, 0), 0);
+    }
+
+    #[test]
+    fn word_right_lands_on_the_end_of_the_word_after() {
+        let t = "hello brave  world";
+        assert_eq!(word_right(t, 0), 5);
+        assert_eq!(word_right(t, 5), 11);
+        assert_eq!(word_right(t, 11), t.len());
+        assert_eq!(word_right(t, t.len()), t.len());
+    }
+
+    #[test]
+    fn punctuation_is_a_word_of_its_own() {
+        let t = "foo.bar(baz)";
+        assert_eq!(word_right(t, 0), 3);
+        assert_eq!(word_right(t, 3), 4);
+        assert_eq!(word_left(t, t.len()), 11);
+        assert_eq!(word_left(t, 11), 8);
+        assert_eq!(word_left(t, 8), 7);
+    }
+
+    #[test]
+    fn a_word_crosses_line_breaks_and_whole_characters() {
+        let t = "één\n  café_2";
+        assert_eq!(word_right(t, 0), "één".len());
+        assert_eq!(word_right(t, "één".len()), t.len());
+        assert_eq!(word_left(t, t.len()), "één\n  ".len());
+        assert_eq!(word_left(t, "één\n  ".len()), 0);
+        // A position inside a character is clamped down to its start.
+        assert_eq!(word_left(t, 1), 0);
+        assert_eq!(word_right(t, 1), "één".len());
+        assert_eq!(word_right(t, 99), t.len());
+    }
+
+    #[test]
+    fn state_word_moves_extend_and_drop_the_selection() {
+        let mut s = InputState::new("one two three", true);
+        s.word_left(false);
+        assert_eq!(s.caret, 8);
+        assert_eq!(s.selection(), None);
+        s.word_left(true);
+        assert_eq!(s.selection(), Some((4, 8)));
+        s.word_right(false);
+        assert_eq!((s.caret, s.selection()), (7, None));
+        s.text_end(false);
+        s.text_home(true);
+        assert_eq!(s.selection(), Some((0, 13)));
+        s.text_end(false);
+        assert_eq!((s.caret, s.selection()), (13, None));
+    }
+
+    #[test]
+    fn state_word_deletes_take_a_word_or_the_selection() {
+        let mut s = InputState::new("one two three", true);
+        s.delete_word_back();
+        assert_eq!((s.text.as_str(), s.caret), ("one two ", 8));
+        s.text_home(false);
+        s.delete_word_forward();
+        assert_eq!((s.text.as_str(), s.caret), (" two ", 0));
+        s.word_right(true);
+        s.delete_word_back();
+        assert_eq!((s.text.as_str(), s.caret), (" ", 0));
     }
 }
