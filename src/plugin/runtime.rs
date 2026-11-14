@@ -654,8 +654,8 @@ pub mod host {
 
 /// Where the user stands with a paid tier, and the credential for yours.
 ///
-/// [`standing`]`("you/cloud")` answers active, grace, expired or missing with a
-/// day count. [`token`] gives the user's redeem token for the tier your
+/// [`license::standing`](self::license::standing)`("you/cloud")` answers active,
+/// grace, expired or missing with a day count. [`license::token`](self::license::token) gives the user's redeem token for the tier your
 /// `plugin.json` names as `service.tier`, and nothing for any other. Keep
 /// `grace` working (with a notice), disclose paid features in your store entry,
 /// and never gate the user's own data.

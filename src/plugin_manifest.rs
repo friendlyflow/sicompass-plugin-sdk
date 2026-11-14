@@ -3,8 +3,7 @@
 //! Portable (no `host` feature), because three parties read it: the app's plugin
 //! host, the `sicompass-plugin` tool that packs and signs a release, and the
 //! Store that shows a plugin before installing it. The rules for what a manifest
-//! may ask for, and how a built component is checked against it, are in
-//! [`crate::plugin_abi`]. The design is sicompass's docs/plugin-platform.md.
+//! may ask for are in [`crate::plugin_abi`]. The design is sicompass's docs/plugin-platform.md.
 
 use serde::{Deserialize, Serialize};
 
@@ -102,18 +101,12 @@ pub struct PluginManifest {
     /// their own library must declare `false` and require a restart.
     #[serde(default = "default_hot_reload")]
     pub hot_reload: bool,
-    /// Hosts a `wasm` plugin may reach over the network.
+    /// Hosts the plugin says it connects to.
     ///
-    /// This is a capability declaration, not a hint. Absent or empty means the
-    /// network interface is **not linked into the guest at all**, so the plugin has
-    /// no reachable network function rather than a blocked one. A component that
-    /// uses the network without declaring hosts here is refused before it is
-    /// instantiated.
-    ///
-    /// Matching is exact and case-insensitive: subdomains must be listed
-    /// individually, because `evil.example.com` is not `example.com`. Listing them
-    /// here is also what shows the user, before they enable the plugin, where it
-    /// intends to connect.
+    /// A declaration shown to the user, before they enable the plugin, of where
+    /// it intends to connect. It is not enforced: a plugin process runs with the
+    /// user's rights. List subdomains individually, because `evil.example.com`
+    /// is not `example.com`.
     ///
     /// Also accepted as `permissions.allowedHosts`, where the other permissions
     /// live. The two lists are merged; see [`PluginManifest::allowed_hosts`].

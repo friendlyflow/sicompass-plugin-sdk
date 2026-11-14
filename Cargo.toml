@@ -37,7 +37,7 @@ host = [
 ]
 # Plugin releases: build, sign, verify and unpack `plugin.tar.gz` +
 # `release.json` (src/package.rs). For the `sicompass-plugin` tool and the Store,
-# never for a guest. Additive like `host`.
+# never for a plugin. Additive like `host`.
 package = [
     "dep:tar",
     "dep:flate2",
@@ -50,7 +50,7 @@ package = [
 # The wire between the app and a plugin process (src/plugin_ipc): the records,
 # the messages and their framing. The app uses it to talk to its plugins.
 ipc = ["dep:postcard"]
-# Writing a plugin (src/plugin): the `Plugin` trait, and in a native build the
+# Writing a plugin (src/plugin): the `Plugin` trait, and the
 # runtime that serves it to the app over stdin and stdout. A plugin depends on
 # the SDK with `default-features = false, features = ["plugin"]`.
 plugin = ["ipc", "dep:libc", "dep:windows-sys"]
@@ -82,7 +82,7 @@ ed25519-dalek = { version = "3", optional = true }
 base64 = { version = "0.23", optional = true }
 getrandom = { version = "0.3", optional = true }
 
-# `ipc`. The version wasmtime already locks in the app.
+# `ipc`: the framing of the app's wire to a plugin process.
 postcard = { version = "1.1", default-features = false, features = ["use-std"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

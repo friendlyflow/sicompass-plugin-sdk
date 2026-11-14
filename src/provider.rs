@@ -615,9 +615,9 @@ pub trait Provider: Send + 'static {
     /// `Structural` undo works by mutating the FFON tree, which a dashboard
     /// edit never touches, so it cannot reverse one.
     ///
-    /// Host-side only, and deliberately absent from the WIT descriptor: it
-    /// changes which keys a provider can intercept, and a sandboxed guest does
-    /// not get to make that choice. See `docs/wasm-plugins.md`.
+    /// Host-side only, and deliberately absent from the plugin wire
+    /// (`plugin_ipc`): it changes which keys a provider can intercept, and a
+    /// plugin does not get to make that choice.
     fn dashboard_uses_app_undo(&self) -> bool {
         false
     }
@@ -834,10 +834,10 @@ impl Provider for GenericProvider {
 // ---------------------------------------------------------------------------
 //
 // A process-global list of boxed closures, populated at link time by
-// `sicompass_builtins::register_all()`. Neither half of that works in a WASM
-// guest: each component instance has its own linear memory, so there is no shared
-// registry to register into, and a guest exports one provider rather than a set of
-// factories. The host instantiates a WASM provider from its `plugin.json` instead.
+// `sicompass_builtins::register_all()`. Neither half of that works in a plugin:
+// it is another process, so there is no shared registry to register into, and it
+// serves one provider rather than a set of factories. The host starts a plugin
+// from its `plugin.json` instead.
 
 /// A factory function that creates a `Provider` by name.
 #[cfg(feature = "host")]

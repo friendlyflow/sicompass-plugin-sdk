@@ -11,7 +11,7 @@ cargo install sicompass-plugin
 |---|---|
 | `keygen --out <file>` | Create a signing key. The secret goes to the file, never to stdout, and the public key is printed. The public key is what the store lists. |
 | `pubkey --key <file>` | Print the public key of a secret key file. |
-| `pack [--dir <dir>] [--out <dir>]` | Check a built plugin directory (`plugin.json`, the component, `assets/`, `locales/`) and write `plugin.tar.gz` and `release.json` to `dist/`. |
+| `pack [--dir <dir>] [--out <dir>] --bin <target>=<executable>...` | Check a plugin directory (`plugin.json`, `assets/`, `locales/`) and its builds, one `--bin` per platform, and write a `plugin-<target>.tar.gz` for each and one `release.json` to `dist/`. |
 | `sign --key <file>` | Sign `release.json`, writing `release.json.sig`. |
 | `verify --pubkey <key>` | Verify a packed and signed release the way the Store does. |
 | `store-sign --key <file> <store>` | Check a store's structure and sign it, writing `<store>.sig`. |

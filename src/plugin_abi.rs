@@ -21,8 +21,8 @@ use crate::plugin_manifest::Permissions;
 /// [`COMPOSE_COMMAND`]).
 pub const PROTOCOL_VERSION: &str = "1.4";
 
-/// The `abi` a release of a plugin process names in `release.json`. Unlike
-/// [`ABI_VERSION`], an app that only runs WASM components refuses it rather
+/// The `abi` a release of a plugin process names in `release.json`. An app
+/// from before sicompass 0.3 does not know it and refuses the release rather
 /// than installing a program it cannot run.
 pub const PROCESS_ABI: &str = "process/1.0";
 

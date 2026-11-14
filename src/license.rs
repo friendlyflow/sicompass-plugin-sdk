@@ -3,7 +3,7 @@
 //! The host cannot answer it alone: the issuer key of a tier is in the signed
 //! store list, and the certificates and redeem tokens are the Store's, behind
 //! the SDK boundary. So the Store registers the answers at startup, the same
-//! way the app registers its HTTP client, and the WASM host asks here.
+//! way the app registers its HTTP client, and the plugin host asks here.
 //! Unregistered, every tier is missing and there is no token.
 
 use std::sync::RwLock;

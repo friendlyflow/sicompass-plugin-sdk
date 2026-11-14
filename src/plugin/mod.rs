@@ -45,7 +45,7 @@ mod types_reexport {
     pub use crate::plugin_ipc::{
         Application, Cell, CellAttrs, Completions, CursorStyle, DashboardKind, DashboardRequest,
         Descriptor, Ffon, Frame, Key, Keysym, ListItem, NavigationRequest, OauthReply, Palette,
-        PollResult, ProviderOp, SearchResult, Selection, TaskEvent, TierStanding, TierStatus,
+        PollResult, ProviderOp, SearchResult, Selection, TierStanding, TierStatus,
     };
 }
 pub use types_reexport::*;
@@ -68,19 +68,15 @@ pub use crate::plugin_abi::RENDER_URL_COMMAND;
 /// The FFON data model, re-exported so a plugin needs one import path.
 pub use crate::{FfonElement, FfonObject, IdArray};
 
-#[cfg(not(target_arch = "wasm32"))]
 mod runtime;
-#[cfg(not(target_arch = "wasm32"))]
 mod stdio;
 
-#[cfg(not(target_arch = "wasm32"))]
 pub use runtime::{
     command, desktop, host, license, plugin_dir, read_asset, run, serve, storage_dir,
 };
 
 /// Make a [`Plugin`] the program: `sicompass_sdk::plugin::main!(MyPlugin);`
 /// generates `fn main`, which hands the process to [`run`].
-#[cfg(not(target_arch = "wasm32"))]
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __sicompass_plugin_main {
@@ -90,7 +86,6 @@ macro_rules! __sicompass_plugin_main {
         }
     };
 }
-#[cfg(not(target_arch = "wasm32"))]
 pub use crate::__sicompass_plugin_main as main;
 
 // ---------------------------------------------------------------------------
@@ -464,17 +459,6 @@ pub trait Plugin: Sized + 'static {
 
     /// The app's active colours, before each [`Plugin::dashboard_render`].
     fn set_dashboard_palette(&mut self, _palette: Palette) {}
-
-    /// A background task, for the WASM build only: `sicompass_pdk::tasks::spawn`
-    /// runs it in a fresh instance of the plugin. A plugin process uses its own
-    /// threads, and the app never calls this.
-    fn run_task(&mut self, name: &str, _input: &[u8]) -> Result<Vec<u8>, String> {
-        Err(format!("this plugin has no task named `{name}`"))
-    }
-
-    /// The WASM build's report from a task [`Plugin::run_task`] ran. Never
-    /// called in a plugin process.
-    fn on_task_event(&mut self, _id: u64, _event: TaskEvent) {}
 }
 
 #[cfg(test)]

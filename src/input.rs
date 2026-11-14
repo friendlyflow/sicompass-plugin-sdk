@@ -1,7 +1,7 @@
 //! The multiline text field behind every `<input>`, as plain data.
 //!
 //! The app's Insert mode edits `<input>` elements with this model, and a
-//! surface the app does not draw (a dashboard, native or WASM) can use the same
+//! surface the app does not draw (a dashboard) can use the same
 //! one instead of growing its own. Sharing it is the point: what the user sees
 //! wrap, where the caret is drawn, what a selection covers and where Up/Down go
 //! are all read from **one** list of [`InputLine`]s, so they cannot disagree.

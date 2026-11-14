@@ -2,9 +2,9 @@
 //! `plugin.json` and its `locales/*.ftl`.
 //!
 //! Two kinds of caller need these files without starting a plugin. One is the
-//! app's WASM host, which loads a plugin's strings before instantiating it. The
+//! app's plugin host, which loads a plugin's strings before starting it. The
 //! other is a built-in that describes the installed plugins, such as the tutorial,
-//! which also runs inside the desicompass superkey, where there is no WASM host
+//! which also runs inside the desicompass superkey, where there is no plugin host
 //! at all. Both register locales through [`register_locales`], so its
 //! once-per-process bookkeeping covers them both.
 

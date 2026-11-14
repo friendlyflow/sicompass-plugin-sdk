@@ -11,10 +11,10 @@
 //!   assume they run inside the app are absent.
 
 // ---------------------------------------------------------------------------
-// Portable — available to host and guest alike
+// Portable — available to the app and to a plugin alike
 // ---------------------------------------------------------------------------
 
-// Naming an asset is portable (a guest names its own files the same way); the
+// Naming an asset is portable (a plugin names its own files the same way); the
 // byte registry inside is host-only, gated within the module.
 pub mod assets;
 pub mod dashboard;
@@ -51,17 +51,17 @@ pub mod fs_links;
 // Host-only
 // ---------------------------------------------------------------------------
 
-// `fs_trash` needs the `trash` crate, which does not build for wasm; a guest
-// cannot reach the OS trash at all.
+// `fs_trash` needs the `trash` crate, which only the app links. A plugin asks
+// the app to trash a file (`HostRequest::Trash`).
 #[cfg(feature = "host")]
 pub mod fs_trash;
-// The Fluent localizer is a process-global `RwLock<Localizer>`. Guests localize
-// through the host's `translate` import instead, so there is one bundle set, not
-// two divergent ones.
+// The Fluent localizer is a process-global `RwLock<Localizer>`. A plugin
+// localizes by asking the app (`plugin::host::translate`) instead, so there is
+// one bundle set, not two divergent ones.
 #[cfg(feature = "host")]
 pub mod localize;
-// The installed plugins' manifests and locale files, read from disk by the WASM
-// host and by built-ins that describe them (the tutorial).
+// The installed plugins' manifests and locale files, read from disk by the
+// plugin host and by built-ins that describe them (the tutorial).
 #[cfg(feature = "host")]
 pub mod installed_plugins;
 // The answer to a plugin's `license.status(tier)`, registered by the Store.
@@ -111,8 +111,8 @@ pub use manifest::{
     BuiltinManifest, SettingDecl, SettingKind, builtin_manifests, register_builtin_manifest,
 };
 // The factory registry is a process-global `Vec<(String, ProviderFactory)>` of
-// boxed closures. A guest has neither the closures nor a shared registry to put
-// them in; the host instantiates WASM providers from a manifest instead.
+// boxed closures. A plugin is another process, with neither the closures nor a
+// shared registry to put them in. The host starts it from its manifest instead.
 #[cfg(feature = "host")]
 pub use provider::{create_provider_by_name, register_provider_factory};
 #[cfg(feature = "host")]
@@ -132,9 +132,8 @@ pub use url_fetcher::{fetch_url_to_ffon, register_url_fetcher};
 /// Falls back to `block_in_place` when a runtime is already current, so calling
 /// it from inside one does not panic.
 ///
-/// Host-only: needs a multi-thread tokio runtime, which does not exist in a WASM
-/// guest. The `undo`/`redo` guest exports are plain synchronous calls, so the
-/// `WasmProvider` adapter satisfies the async trait methods without awaiting.
+/// Host-only: needs a multi-thread tokio runtime, which a plugin built without
+/// the `host` feature does not link.
 #[cfg(feature = "host")]
 pub fn block_on<F: std::future::Future>(fut: F) -> F::Output {
     static RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
@@ -159,26 +158,14 @@ pub fn block_on<F: std::future::Future>(fut: F) -> F::Output {
 #[cfg(test)]
 mod feature_split_tests {
     //! These pin the *portable* surface: everything referenced here must stay
-    //! reachable without the `host` feature, because a WASM guest builds with
-    //! `default-features = false`.
-    //!
-    //! Compiling for wasm is what actually proves the split, and no unit test can
-    //! do that from inside the crate. CI must also run:
-    //!
-    //! ```text
-    //! cargo check --no-default-features --target wasm32-wasip2
-    //! ```
-    //!
-    //! Guests target `wasm32-wasip2`. Its std imports an inert WASI baseline that
-    //! the host links for every plugin, and everything that grants authority is
-    //! linked only when the plugin's manifest asks, which keeps "the component's
-    //! import section is its capability set" true.
+    //! reachable without the `host` feature, because a plugin builds with
+    //! `default-features = false, features = ["plugin"]`.
 
     use super::*;
 
     #[test]
     fn portable_surface_needs_no_host_feature() {
-        // FFON data model, including the HTML pipeline (scraper builds for wasm).
+        // FFON data model, including the HTML pipeline.
         let elems = vec![FfonElement::new_str("x"), FfonElement::new_obj("k")];
         let blob = ffon::serialize_binary(&elems);
         assert_eq!(ffon::deserialize_binary(&blob), elems);
@@ -207,7 +194,7 @@ mod feature_split_tests {
             NavigationRequest::EnterChildren
         );
 
-        // Asset naming. A guest has to be able to build and read back the URI it
+        // Asset naming. A plugin has to be able to build and read back the URI it
         // puts in an `<image>` tag; only the byte registry is host-only.
         let u = assets::uri("p", "f.png");
         assert!(assets::is_uri(&u));

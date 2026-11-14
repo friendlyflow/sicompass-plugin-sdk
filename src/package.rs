@@ -1,7 +1,7 @@
 //! A plugin release: `plugin.tar.gz`, `release.json` and its signature.
 //!
 //! Behind the `package` feature, because the `sicompass-plugin` tool and the Store
-//! need it and a guest never does. The format (docs/plugin-platform.md §7):
+//! need it and a plugin never does. The format (docs/plugin-platform.md §7):
 //!
 //! | File | Contents |
 //! |---|---|
@@ -48,7 +48,7 @@ pub const MAX_ENTRIES: usize = 10_000;
 pub struct ReleaseInfo {
     pub name: String,
     pub version: String,
-    /// The plugin ABI the component was built for (`sicompass:plugin@...`).
+    /// The plugin ABI the release was built for ([`crate::plugin_abi::PROCESS_ABI`]).
     pub abi: String,
     #[serde(default)]
     pub min_app_version: Option<String>,

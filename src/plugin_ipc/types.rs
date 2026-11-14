@@ -169,14 +169,6 @@ pub enum NavigationRequest {
     SelectPath(Vec<u32>),
 }
 
-/// What happened to a background task. Only the WASM build has host-run tasks:
-/// a plugin process runs its background work on its own threads.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TaskEvent {
-    Progress(Vec<u8>),
-    Done(Result<Vec<u8>, String>),
-}
-
 /// A reversible action, for the unified undo/redo timeline: the app's
 /// `TimelineEntry::ProviderOp` and only that.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
